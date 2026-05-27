@@ -3,14 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const GENRES = ["言情", "悬疑", "科幻", "喜剧", "古风", "都市", "玄幻", "恐怖", "校园"];
+const GENRES = [
+  "言情", "悬疑", "科幻", "喜剧", "古风", "都市", "玄幻", "恐怖",
+  "校园", "热血", "治愈", "末日", "修仙", "穿越", "宫廷", "武侠",
+  "赛博朋克", "克苏鲁", "日常", "运动", "美食", "职场", "神话", "暗黑",
+];
 const STYLES = [
-  { id: "anime", label: "日系动漫" },
-  { id: "comic", label: "欧美漫画" },
-  { id: "watercolor", label: "水彩手绘" },
-  { id: "realistic", label: "写实风格" },
-  { id: "pixel", label: "像素风" },
-  { id: "ink", label: "水墨国风" },
+  { id: "anime", label: "日系动漫", icon: "🌸" },
+  { id: "comic", label: "欧美漫画", icon: "💥" },
+  { id: "watercolor", label: "水彩手绘", icon: "🎨" },
+  { id: "realistic", label: "写实风格", icon: "📷" },
+  { id: "pixel", label: "像素风", icon: "👾" },
+  { id: "ink", label: "水墨国风", icon: "🖌️" },
+  { id: "ghibli", label: "吉卜力风", icon: "🌿" },
+  { id: "cyberpunk", label: "赛博朋克", icon: "🌃" },
+  { id: "flat", label: "扁平插画", icon: "📐" },
+  { id: "chibi", label: "Q版萌系", icon: "🧸" },
+  { id: "noir", label: "黑白漫画", icon: "🖤" },
+  { id: "ukiyo", label: "浮世绘", icon: "🌊" },
 ];
 
 export default function CreatePage() {
@@ -18,8 +28,15 @@ export default function CreatePage() {
   const [title, setTitle] = useState("");
   const [script, setScript] = useState("");
   const [genre, setGenre] = useState("");
+  const [customGenre, setCustomGenre] = useState("");
+  const [showCustomGenre, setShowCustomGenre] = useState(false);
   const [style, setStyle] = useState("anime");
+  const [customStyle, setCustomStyle] = useState("");
+  const [showCustomStyle, setShowCustomStyle] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const finalGenre = showCustomGenre ? customGenre.trim() : genre;
+  const finalStyle = showCustomStyle ? customStyle.trim() || "anime" : style;
 
   const handleCreate = async () => {
     if (!title.trim() || !script.trim()) return;
@@ -28,7 +45,7 @@ export default function CreatePage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, script, genre, style }),
+        body: JSON.stringify({ title, script, genre: finalGenre, style: finalStyle }),
       });
       const data = await res.json();
       if (data.id) {
@@ -71,17 +88,17 @@ export default function CreatePage() {
         <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
           🎭 故事类型
         </label>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           {GENRES.map((g) => (
             <button
               key={g}
-              onClick={() => setGenre(g)}
+              onClick={() => { setGenre(g); setShowCustomGenre(false); }}
               style={{
-                padding: "8px 16px",
+                padding: "6px 14px",
                 borderRadius: 20,
-                border: `1px solid ${genre === g ? "var(--accent)" : "var(--border)"}`,
-                background: genre === g ? "var(--accent)" : "transparent",
-                color: genre === g ? "white" : "var(--text-muted)",
+                border: `1px solid ${genre === g && !showCustomGenre ? "var(--accent)" : "var(--border)"}`,
+                background: genre === g && !showCustomGenre ? "var(--accent)" : "transparent",
+                color: genre === g && !showCustomGenre ? "white" : "var(--text-muted)",
                 cursor: "pointer",
                 fontSize: 13,
                 transition: "all 0.2s",
@@ -90,7 +107,30 @@ export default function CreatePage() {
               {g}
             </button>
           ))}
+          <button
+            onClick={() => setShowCustomGenre(!showCustomGenre)}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 20,
+              border: `1px dashed ${showCustomGenre ? "var(--accent)" : "var(--border)"}`,
+              background: showCustomGenre ? "rgba(124,92,252,0.08)" : "transparent",
+              color: showCustomGenre ? "var(--accent)" : "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            ✏️ 自定义
+          </button>
         </div>
+        {showCustomGenre && (
+          <input
+            className="input"
+            placeholder="输入自定义类型，如：仙侠、机甲、吸血鬼..."
+            value={customGenre}
+            onChange={(e) => setCustomGenre(e.target.value)}
+            style={{ marginTop: 8 }}
+          />
+        )}
       </div>
 
       {/* 画风 */}
@@ -98,26 +138,48 @@ export default function CreatePage() {
         <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
           🎨 画风选择
         </label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
           {STYLES.map((s) => (
             <button
               key={s.id}
-              onClick={() => setStyle(s.id)}
+              onClick={() => { setStyle(s.id); setShowCustomStyle(false); }}
               className="card"
               style={{
                 textAlign: "center",
                 cursor: "pointer",
-                border: `1px solid ${style === s.id ? "var(--accent)" : "var(--border)"}`,
-                background: style === s.id ? "rgba(124, 92, 252, 0.08)" : "var(--bg-card)",
+                padding: "14px 8px",
+                border: `1px solid ${style === s.id && !showCustomStyle ? "var(--accent)" : "var(--border)"}`,
+                background: style === s.id && !showCustomStyle ? "rgba(124, 92, 252, 0.08)" : "var(--bg-card)",
               }}
             >
-              <div style={{ fontSize: 28, marginBottom: 4 }}>
-                {s.id === "anime" ? "🌸" : s.id === "comic" ? "💥" : s.id === "watercolor" ? "🎨" : s.id === "realistic" ? "📷" : s.id === "pixel" ? "👾" : "🖌️"}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{s.label}</div>
+              <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 500 }}>{s.label}</div>
             </button>
           ))}
+          <button
+            onClick={() => setShowCustomStyle(!showCustomStyle)}
+            className="card"
+            style={{
+              textAlign: "center",
+              cursor: "pointer",
+              padding: "14px 8px",
+              border: `1px dashed ${showCustomStyle ? "var(--accent)" : "var(--border)"}`,
+              background: showCustomStyle ? "rgba(124,92,252,0.08)" : "var(--bg-card)",
+            }}
+          >
+            <div style={{ fontSize: 24, marginBottom: 4 }}>✏️</div>
+            <div style={{ fontSize: 12, fontWeight: 500 }}>自定义</div>
+          </button>
         </div>
+        {showCustomStyle && (
+          <input
+            className="input"
+            placeholder="输入自定义画风，如：美式复古、蒸汽朋克、莫兰迪色系..."
+            value={customStyle}
+            onChange={(e) => setCustomStyle(e.target.value)}
+            style={{ marginTop: 4 }}
+          />
+        )}
       </div>
 
       {/* 剧本输入 */}
