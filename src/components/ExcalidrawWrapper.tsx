@@ -34,7 +34,7 @@ const ExcalidrawWrapper = forwardRef(function ExcalidrawWrapper(
       UIOptions={{
         canvasActions: {
           changeViewBackgroundColor: true,
-          export: true,
+          export: false,
           loadScene: true,
           saveToActiveFile: true,
           toggleTheme: true,
