@@ -81,3 +81,14 @@ export const assets = sqliteTable("assets", {
   tags: text("tags"), // JSON: 标签
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
+
+// ==================== 画布 ====================
+export const canvases = sqliteTable("canvases", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().default("未命名画布"),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  data: text("data"), // JSON: Excalidraw 场景数据
+  thumbnail: text("thumbnail"), // 缩略图 base64
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+});
