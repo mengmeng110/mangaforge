@@ -3,6 +3,22 @@
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { useState } from "react";
 
+// 常见 LLM 提供商预设
+const LLM_PRESETS = [
+  { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat", visionModel: "" },
+  { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", visionModel: "gpt-4o" },
+  { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V3", visionModel: "deepseek-ai/DeepSeek-V3" },
+  { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", visionModel: "qwen-vl-max" },
+  { name: "小米 MiMo", baseUrl: "https://api.mimo.xiaomi.com/v1", model: "MiMo-V2.5-Pro", visionModel: "" },
+  { name: "自定义", baseUrl: "", model: "", visionModel: "" },
+];
+
+const IMG_PRESETS = [
+  { name: "OpenAI DALL-E", baseUrl: "https://api.openai.com/v1", model: "dall-e-3" },
+  { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "black-forest-labs/FLUX.1-schnell" },
+  { name: "自定义", baseUrl: "", model: "" },
+];
+
 export default function SettingsPage() {
   const settings = useSettingsStore();
   const [saved, setSaved] = useState(false);
@@ -23,10 +39,27 @@ export default function SettingsPage() {
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>🧠 LLM（大语言模型）</h3>
         <div style={{ display: "grid", gap: 12 }}>
+          {/* 快速选择 */}
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>快速选择供应商</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {LLM_PRESETS.map((p) => (
+                <button key={p.name} className="btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}
+                  onClick={() => {
+                    if (p.name === "自定义") return;
+                    settings.setLLM({ ...settings.llm, baseUrl: p.baseUrl, model: p.model, visionModel: p.visionModel });
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>API Base URL</label>
             <input className="input" value={settings.llm.baseUrl}
-              onChange={(e) => settings.setLLM({ ...settings.llm, baseUrl: e.target.value })} />
+              onChange={(e) => settings.setLLM({ ...settings.llm, baseUrl: e.target.value })}
+              placeholder="https://api.deepseek.com" />
           </div>
           <div>
             <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>API Key</label>
@@ -38,10 +71,11 @@ export default function SettingsPage() {
             <div>
               <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>模型</label>
               <input className="input" value={settings.llm.model}
-                onChange={(e) => settings.setLLM({ ...settings.llm, model: e.target.value })} />
+                onChange={(e) => settings.setLLM({ ...settings.llm, model: e.target.value })}
+                placeholder="deepseek-chat" />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>视觉模型</label>
+              <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>视觉模型（可选）</label>
               <input className="input" value={settings.llm.visionModel || ""}
                 onChange={(e) => settings.setLLM({ ...settings.llm, visionModel: e.target.value })} />
             </div>
@@ -53,6 +87,21 @@ export default function SettingsPage() {
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>🎨 图片生成</h3>
         <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>快速选择供应商</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {IMG_PRESETS.map((p) => (
+                <button key={p.name} className="btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}
+                  onClick={() => {
+                    if (p.name === "自定义") return;
+                    settings.setImageGen({ ...settings.imageGen, baseUrl: p.baseUrl, model: p.model });
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>API Base URL</label>
             <input className="input" value={settings.imageGen.baseUrl}
