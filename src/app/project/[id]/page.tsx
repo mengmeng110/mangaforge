@@ -31,19 +31,26 @@ export default function ProjectPage() {
   const loadProject = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}`);
     const data = await res.json();
-    setProject(data);
+    setProject({
+      ...data,
+      characters: data.characters || [],
+      scenes: data.scenes || [],
+      panels: data.panels || [],
+    });
   }, [id]);
 
   // 加载资产
   const loadAssets = useCallback(async () => {
     const res = await fetch(`/api/assets?projectId=${id}`);
-    setAssets(await res.json());
+    const data = await res.json();
+    setAssets(Array.isArray(data) ? data : []);
   }, [id]);
 
   // 加载管线状态
   const loadPipeline = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}/pipeline`);
-    setPipeline(await res.json());
+    const data = await res.json();
+    setPipeline(data && data.steps ? data : null);
   }, [id]);
 
   useEffect(() => { loadProject(); loadAssets(); loadPipeline(); }, [loadProject, loadAssets, loadPipeline]);
