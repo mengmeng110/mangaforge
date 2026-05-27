@@ -16,6 +16,13 @@ export interface ImageGenConfig {
   model: string;
 }
 
+export interface VideoGenConfig {
+  provider?: string;
+  apiKey: string;
+  baseUrl?: string;
+  model: string;
+}
+
 // 标准化 baseUrl — 自动补全路径
 function normalizeBaseUrl(raw: string): string {
   let url = raw.replace(/\/+$/, "");
@@ -142,4 +149,103 @@ export async function generateSpeech(
   }
 
   return res.arrayBuffer();
+}
+
+// ==================== 视频生成 (图生视频) ====================
+// 提交视频生成任务（异步）
+export async function submitVideoTask(
+  config: VideoGenConfig,
+  imageUrl: string,
+  prompt: string
+): Promise<string> {
+  const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.siliconflow.cn/v1");
+  const url = `${baseUrl}/v1/video/submit`;
+
+  console.log(`[视频] 提交任务: ${url} 模型: ${config.model}`);
+
+  const res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      image: imageUrl,
+      prompt: prompt,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "未知错误");
+    throw new Error(`视频生成提交失败 (${res.status}): ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  const taskId = data.requestId || data.task_id || data.id || "";
+  if (!taskId) {
+    throw new Error(`视频任务提交失败，未返回 taskId: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+
+  console.log(`[视频] 任务已提交: ${taskId}`);
+  return taskId;
+}
+
+// 轮询视频生成任务状态
+export async function pollVideoTask(
+  config: VideoGenConfig,
+  taskId: string
+): Promise<{ status: string; videoUrl?: string }> {
+  const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.siliconflow.cn/v1");
+  const url = `${baseUrl}/v1/video/status/${taskId}`;
+
+  const res = await fetchWithTimeout(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "未知错误");
+    throw new Error(`查询视频任务失败 (${res.status}): ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  const status = data.status || "unknown";
+
+  // 提取视频 URL（不同平台返回结构不同）
+  const videoUrl =
+    data.video?.url ||
+    data.output?.video_url ||
+    data.results?.[0]?.url ||
+    data.videoUrl ||
+    "";
+
+  return { status, videoUrl: videoUrl || undefined };
+}
+
+// 等待视频生成完成（自动轮询）
+export async function waitForVideo(
+  config: VideoGenConfig,
+  taskId: string,
+  maxWaitMs = 300000, // 5分钟
+  pollIntervalMs = 5000 // 5秒
+): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const result = await pollVideoTask(config, taskId);
+    console.log(`[视频] 任务 ${taskId} 状态: ${result.status}`);
+
+    if (result.status === "Succeed" || result.status === "succeed" || result.status === "completed") {
+      if (!result.videoUrl) throw new Error("视频生成完成但未返回 URL");
+      return result.videoUrl;
+    }
+    if (result.status === "Failed" || result.status === "failed") {
+      throw new Error("视频生成失败");
+    }
+
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  throw new Error(`视频生成超时 (${maxWaitMs / 1000}秒)`);
 }

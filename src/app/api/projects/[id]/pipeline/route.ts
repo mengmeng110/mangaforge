@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPipelineState, runPipeline } from "@/lib/ai/pipeline";
-import type { LLMConfig, ImageGenConfig } from "@/lib/ai/engine";
+import type { LLMConfig, ImageGenConfig, VideoGenConfig } from "@/lib/ai/engine";
 
 // GET /api/projects/[id]/pipeline - 获取管线状态
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const { id } = await params;
     const body = await req.json();
-    const { llmConfig, imageGenConfig, ttsConfig, startFrom } = body;
+    const { llmConfig, imageGenConfig, videoGenConfig, ttsConfig, startFrom } = body;
 
     if (!llmConfig?.apiKey || !imageGenConfig?.apiKey) {
       return NextResponse.json({ error: "请先配置 LLM 和图片生成的 API Key" }, { status: 400 });
@@ -30,6 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     runPipeline(id, {
       llm: llmConfig as LLMConfig,
       imageGen: imageGenConfig as ImageGenConfig,
+      videoGen: videoGenConfig?.apiKey ? videoGenConfig as VideoGenConfig : undefined,
       tts: ttsConfig || { apiKey: "" },
     }, startFrom).catch(console.error);
 

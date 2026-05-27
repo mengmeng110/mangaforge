@@ -19,6 +19,12 @@ const IMG_PRESETS = [
   { name: "自定义", baseUrl: "", model: "" },
 ];
 
+const VIDEO_PRESETS = [
+  { name: "硅基流动 Wan", baseUrl: "https://api.siliconflow.cn/v1", model: "Wan-AI/Wan2.1-I2V-14B-720P" },
+  { name: "可灵 Kling", baseUrl: "https://api.klingai.com", model: "kling-v1" },
+  { name: "自定义", baseUrl: "", model: "" },
+];
+
 export default function SettingsPage() {
   const settings = useSettingsStore();
   const [saved, setSaved] = useState(false);
@@ -116,6 +122,43 @@ export default function SettingsPage() {
             <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>模型</label>
             <input className="input" value={settings.imageGen.model}
               onChange={(e) => settings.setImageGen({ ...settings.imageGen, model: e.target.value })} />
+          </div>
+        </div>
+      </div>
+
+      {/* 视频生成设置 */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>🎬 分镜视频生成 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>（可选，图生视频）</span></h3>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>快速选择供应商</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {VIDEO_PRESETS.map((p) => (
+                <button key={p.name} className="btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}
+                  onClick={() => {
+                    if (p.name === "自定义") return;
+                    settings.setVideoGen({ ...settings.videoGen, baseUrl: p.baseUrl, model: p.model });
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>API Base URL</label>
+            <input className="input" value={settings.videoGen.baseUrl}
+              onChange={(e) => settings.setVideoGen({ ...settings.videoGen, baseUrl: e.target.value })} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>API Key</label>
+            <input className="input" type="password" value={settings.videoGen.apiKey}
+              onChange={(e) => settings.setVideoGen({ ...settings.videoGen, apiKey: e.target.value })} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>模型</label>
+            <input className="input" value={settings.videoGen.model}
+              onChange={(e) => settings.setVideoGen({ ...settings.videoGen, model: e.target.value })} />
           </div>
         </div>
       </div>

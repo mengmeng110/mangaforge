@@ -13,8 +13,8 @@ interface PipelineStep { step: string; status: string; progress: number; message
 interface PipelineState { steps: PipelineStep[]; currentStep: string; overallProgress: number; isRunning: boolean; }
 interface Asset { id: string; name: string; type: string; url: string; size: number | null; metadata: string | null; }
 
-const STEP_ICONS: Record<string, string> = { script: "📝", storyboard: "🎬", characters: "👤", images: "🎨", voiceover: "🎤", composition: "🎥", export: "📦", done: "✅" };
-const STEP_LABELS: Record<string, string> = { script: "剧本分析", storyboard: "分镜生成", characters: "角色提取", images: "图片生成", voiceover: "配音合成", composition: "视频合成", export: "导出输出", done: "完成" };
+const STEP_ICONS: Record<string, string> = { script: "📝", storyboard: "🎬", characters: "👤", images: "🎨", video: "🎬", voiceover: "🎤", composition: "🎥", export: "📦", done: "✅" };
+const STEP_LABELS: Record<string, string> = { script: "剧本分析", storyboard: "分镜生成", characters: "角色提取", images: "图片生成", video: "分镜视频", voiceover: "配音合成", composition: "视频合成", export: "导出输出", done: "完成" };
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
@@ -97,6 +97,7 @@ export default function ProjectPage() {
       body: JSON.stringify({
         llmConfig: settings.llm,
         imageGenConfig: settings.imageGen,
+        videoGenConfig: settings.videoGen,
         ttsConfig: settings.tts,
         startFrom,
       }),

@@ -1,7 +1,7 @@
 // MangaForge 全流程管线引擎
 // 剧本 → 分镜 → 生图 → 配音 → 合成 → 导出
 
-import { llmChat, generateImage, generateSpeech, type LLMConfig, type ImageGenConfig } from "./engine";
+import { llmChat, generateImage, generateSpeech, submitVideoTask, waitForVideo, type LLMConfig, type ImageGenConfig, type VideoGenConfig } from "./engine";
 import { getDb } from "@/lib/db";
 import { projects, characters, scenes, panels, assets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -9,7 +9,7 @@ import { v4 as uuid } from "uuid";
 import path from "path";
 import fs from "fs";
 
-export type PipelineStep = "script" | "storyboard" | "characters" | "images" | "voiceover" | "composition" | "export" | "done";
+export type PipelineStep = "script" | "storyboard" | "characters" | "images" | "video" | "voiceover" | "composition" | "export" | "done";
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
 export interface PipelineProgress {
@@ -30,13 +30,14 @@ export interface PipelineState {
   isRunning: boolean;
 }
 
-const ALL_STEPS: PipelineStep[] = ["script", "storyboard", "characters", "images", "voiceover", "composition", "export", "done"];
+const ALL_STEPS: PipelineStep[] = ["script", "storyboard", "characters", "images", "video", "voiceover", "composition", "export", "done"];
 
 const STEP_LABELS: Record<PipelineStep, string> = {
   script: "📝 剧本分析",
   storyboard: "🎬 分镜生成",
   characters: "👤 角色提取",
   images: "🎨 图片生成",
+  video: "🎬 分镜视频",
   voiceover: "🎤 配音合成",
   composition: "🎥 视频合成",
   export: "📦 导出输出",
@@ -195,12 +196,99 @@ async function stepGenerateVoiceover(
   onProgress("voiceover", "done", 100, `完成！共生成 ${panelsWithVoice.length} 段配音`);
 }
 
+// 步骤3: 分镜视频生成（图生视频）
+async function stepGenerateVideos(
+  projectId: string,
+  videoConfig: VideoGenConfig,
+  onProgress: (step: PipelineStep, status: StepStatus, progress: number, message: string) => void
+) {
+  onProgress("video", "running", 0, "开始生成分镜视频...");
+  const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
+  const panelsWithImage = panelList.filter((p) => p.imageUrl);
+
+  if (panelsWithImage.length === 0) {
+    onProgress("video", "done", 100, "没有已生成图片的分镜，跳过视频生成");
+    return;
+  }
+
+  const workDir = path.join(process.cwd(), "data", projectId, "videos");
+  fs.mkdirSync(workDir, { recursive: true });
+
+  // 并发提交所有任务（最多同时 3 个）
+  const BATCH = 3;
+  for (let i = 0; i < panelsWithImage.length; i += BATCH) {
+    const batch = panelsWithImage.slice(i, i + BATCH);
+    const tasks = await Promise.allSettled(
+      batch.map(async (panel, j) => {
+        const idx = i + j;
+        const pct = Math.round((idx / panelsWithImage.length) * 100);
+        onProgress("video", "running", pct, `提交第 ${idx + 1}/${panelsWithImage.length} 段视频...`);
+
+        // 构建视频 prompt
+        const prompt = `anime style, ${panel.camera || "medium shot"}, ${panel.prompt || ""}, smooth animation, cinematic`;
+        
+        // 获取图片完整 URL（需要拼接域名，这里用相对路径先存本地）
+        const imgPath = path.join(process.cwd(), "data", projectId, "images", `${panel.id}.png`);
+        if (!fs.existsSync(imgPath)) {
+          throw new Error(`分镜图片不存在: ${panel.id}`);
+        }
+
+        // 提交视频生成任务
+        const taskId = await submitVideoTask(videoConfig, imgPath, prompt);
+        onProgress("video", "running", pct, `等待第 ${idx + 1} 段视频生成... (${taskId})`);
+
+        // 等待完成
+        const videoUrl = await waitForVideo(videoConfig, taskId);
+
+        // 下载视频到本地
+        const videoId = uuid();
+        const videoPath = path.join(workDir, `${videoId}.mp4`);
+        const res = await fetch(videoUrl);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(videoPath, buffer);
+
+        // 更新分镜记录
+        await getDb().update(panels).set({
+          videoUrl: `/api/assets/file/${videoId}`,
+        }).where(eq(panels.id, panel.id)).run();
+
+        // 注册资产
+        await getDb().insert(assets).values({
+          id: videoId,
+          projectId,
+          type: "video",
+          name: `分镜_${idx + 1}_video.mp4`,
+          path: videoPath,
+          url: `/api/assets/file/${videoId}`,
+          size: buffer.length,
+          mimeType: "video/mp4",
+          source: "ai-generated",
+          metadata: JSON.stringify({ panelId: panel.id, taskId }),
+        }).run();
+
+        return videoId;
+      })
+    );
+
+    // 检查失败的任务
+    tasks.forEach((t, j) => {
+      if (t.status === "rejected") {
+        const msg = t.reason instanceof Error ? t.reason.message : "未知错误";
+        onProgress("video", "running", 0, `第 ${i + j + 1} 段视频失败: ${msg}`);
+      }
+    });
+  }
+
+  onProgress("video", "done", 100, `完成！共生成 ${panelsWithImage.length} 段分镜视频`);
+}
+
 // ==================== 主管线执行器 ====================
 export async function runPipeline(
   projectId: string,
   config: {
     llm: LLMConfig;
     imageGen: ImageGenConfig;
+    videoGen?: VideoGenConfig;
     tts: { apiKey: string; baseUrl?: string; model?: string; voice?: string };
   },
   startFrom?: PipelineStep
@@ -228,6 +316,13 @@ export async function runPipeline(
     // 步骤: 图片生成
     if (startIdx <= ALL_STEPS.indexOf("images")) {
       await stepGenerateImages(projectId, config.imageGen, project.style || "anime", onProgress);
+    }
+
+    // 步骤: 分镜视频生成（可选）
+    if (startIdx <= ALL_STEPS.indexOf("video") && config.videoGen?.apiKey) {
+      await stepGenerateVideos(projectId, config.videoGen, onProgress);
+    } else if (startIdx <= ALL_STEPS.indexOf("video")) {
+      updateStep(state, "video", "skipped", 100, "未配置视频生成 API，跳过");
     }
 
     // 步骤: 配音
