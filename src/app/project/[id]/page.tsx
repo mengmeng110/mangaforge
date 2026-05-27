@@ -1,53 +1,62 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 
-interface Character {
-  id: string; name: string; description: string; personality: string;
-  consistencyPrompt: string; referenceImages?: string;
-}
-interface Scene {
-  id: string; index: number; title: string; description: string;
-  location: string; timeOfDay: string; mood: string; bgmStyle: string;
-}
-interface Panel {
-  id: string; index: number; panelType: string; prompt: string;
-  camera: string; characters: string; dialogue: string | null;
-  speaker: string | null; narration: string | null; duration: number;
-  transition: string; imageUrl: string | null; videoUrl: string | null;
-  status: string;
-}
-interface Project {
-  id: string; title: string; genre: string; style: string; status: string;
-  characters: Character[]; scenes: Scene[]; panels: Panel[];
-}
+// ==================== 类型 ====================
+interface Character { id: string; name: string; description: string; personality: string; consistencyPrompt: string; referenceImages?: string; }
+interface Scene { id: string; index: number; title: string; description: string; location: string; timeOfDay: string; mood: string; bgmStyle: string; }
+interface Panel { id: string; index: number; panelType: string; prompt: string; camera: string; characters: string; dialogue: string | null; speaker: string | null; narration: string | null; soundEffect: string | null; duration: number; transition: string; imageUrl: string | null; videoUrl: string | null; status: string; }
+interface Project { id: string; title: string; genre: string; style: string; status: string; description: string; characters: Character[]; scenes: Scene[]; panels: Panel[]; }
+interface PipelineStep { step: string; status: string; progress: number; message: string; }
+interface PipelineState { steps: PipelineStep[]; currentStep: string; overallProgress: number; isRunning: boolean; }
+interface Asset { id: string; name: string; type: string; url: string; size: number | null; metadata: string | null; }
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  draft: { label: "草稿", color: "var(--text-muted)" },
-  analyzing: { label: "分析中…", color: "var(--warning)" },
-  analyzed: { label: "已分析", color: "var(--success)" },
-  error: { label: "出错", color: "var(--error)" },
-};
+const STEP_ICONS: Record<string, string> = { script: "📝", storyboard: "🎬", characters: "👤", images: "🎨", voiceover: "🎤", composition: "🎥", export: "📦", done: "✅" };
+const STEP_LABELS: Record<string, string> = { script: "剧本分析", storyboard: "分镜生成", characters: "角色提取", images: "图片生成", voiceover: "配音合成", composition: "视频合成", export: "导出输出", done: "完成" };
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const settings = useSettingsStore();
   const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [pipeline, setPipeline] = useState<PipelineState | null>(null);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [tab, setTab] = useState<"storyboard" | "characters" | "timeline" | "export">("storyboard");
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"storyboard" | "characters" | "timeline">("storyboard");
+  const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 加载项目
   const loadProject = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}`);
     const data = await res.json();
     setProject(data);
-    setLoading(false);
   }, [id]);
 
-  useEffect(() => { loadProject(); }, [loadProject]);
+  // 加载资产
+  const loadAssets = useCallback(async () => {
+    const res = await fetch(`/api/assets?projectId=${id}`);
+    setAssets(await res.json());
+  }, [id]);
 
+  // 加载管线状态
+  const loadPipeline = useCallback(async () => {
+    const res = await fetch(`/api/projects/${id}/pipeline`);
+    setPipeline(await res.json());
+  }, [id]);
+
+  useEffect(() => { loadProject(); loadAssets(); loadPipeline(); }, [loadProject, loadAssets, loadPipeline]);
+
+  // 轮询管线进度
+  useEffect(() => {
+    if (pipeline?.isRunning) {
+      pollRef.current = setInterval(loadPipeline, 2000);
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [pipeline?.isRunning, loadPipeline]);
+
+  // 分析剧本
   const handleAnalyze = async () => {
     setAnalyzing(true);
     try {
@@ -57,208 +66,248 @@ export default function ProjectPage() {
         body: JSON.stringify({ llmConfig: settings.llm }),
       });
       const data = await res.json();
-      if (data.success) {
-        await loadProject();
-      } else {
-        alert(data.error || "分析失败");
-      }
-    } catch {
-      alert("分析请求失败");
-    } finally {
-      setAnalyzing(false);
-    }
+      if (data.error) alert(`分析失败: ${data.error}`);
+      else loadProject();
+    } catch { alert("分析请求失败"); }
+    finally { setAnalyzing(false); }
   };
 
-  if (loading) return <div style={{ padding: 40, color: "var(--text-muted)" }}>加载中...</div>;
-  if (!project) return <div style={{ padding: 40 }}>项目不存在</div>;
+  // 启动管线
+  const handleRunPipeline = async (startFrom?: string) => {
+    const res = await fetch(`/api/projects/${id}/pipeline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llmConfig: settings.llm,
+        imageGenConfig: settings.imageGen,
+        ttsConfig: settings.tts,
+        startFrom,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+    else { loadPipeline(); pollRef.current = setInterval(loadPipeline, 2000); }
+  };
 
-  const status = STATUS_LABELS[project.status] || STATUS_LABELS.draft;
+  if (!project) return <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 80 }}>加载中...</div>;
+
+  const imageAssets = assets.filter((a) => a.type === "image");
+  const audioAssets = assets.filter((a) => a.type === "audio");
+  const videoAssets = assets.filter((a) => a.type === "video");
 
   return (
     <div className="animate-fade-in">
-      {/* 项目头 */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
+      {/* 项目头部 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>{project.title}</h2>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             {project.genre && <span className="tag tag-genre">{project.genre}</span>}
-            <span className="tag" style={{ color: status.color }}>{status.label}</span>
+            <span className="tag tag-status">{project.status}</span>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{project.style}</span>
           </div>
         </div>
-        {project.status === "draft" && (
-          <button className="btn-primary animate-glow" onClick={handleAnalyze} disabled={analyzing}>
-            {analyzing ? "⏳ AI 分析中..." : "🧠 开始 AI 分析"}
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          {project.status === "draft" && (
+            <button className="btn-primary" onClick={handleAnalyze} disabled={analyzing}>
+              {analyzing ? "⏳ 分析中..." : "🧠 分析剧本"}
+            </button>
+          )}
+          {project.status === "analyzed" && (
+            <button className="btn-primary" onClick={() => handleRunPipeline("images")} disabled={pipeline?.isRunning}>
+              {pipeline?.isRunning ? "⏳ 生成中..." : "🚀 一键生成"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 分析结果预览 */}
-      {project.status === "analyzed" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 32 }}>
-          <div className="card" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 32 }}>👤</div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>{project.characters.length}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>角色</div>
+      {/* ==================== 管线仪表盘 ==================== */}
+      {pipeline && pipeline.steps.some((s) => s.status !== "pending") && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>🔧 生产管线</h3>
+            <span style={{ fontSize: 13, color: pipeline.isRunning ? "var(--warning)" : "var(--success)" }}>
+              {pipeline.isRunning ? "⏳ 运行中..." : pipeline.overallProgress >= 100 ? "✅ 完成" : "⏸️ 暂停"}
+            </span>
           </div>
-          <div className="card" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 32 }}>🎬</div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>{project.scenes.length}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>场景</div>
+          {/* 总进度条 */}
+          <div style={{ width: "100%", height: 8, background: "var(--bg)", borderRadius: 4, marginBottom: 16, overflow: "hidden" }}>
+            <div style={{ width: `${pipeline.overallProgress}%`, height: "100%", background: "var(--accent)", borderRadius: 4, transition: "width 0.5s" }} />
           </div>
-          <div className="card" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 32 }}>🖼️</div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>{project.panels.length}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>分镜</div>
+          {/* 步骤列表 */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            {pipeline.steps.filter((s) => s.step !== "done").map((step) => (
+              <div key={step.step} style={{
+                padding: 12, borderRadius: 10,
+                background: step.status === "running" ? "rgba(124,92,252,0.08)" : step.status === "done" ? "rgba(34,197,94,0.08)" : step.status === "error" ? "rgba(239,68,68,0.08)" : "var(--bg)",
+                border: `1px solid ${step.status === "running" ? "var(--accent)" : step.status === "done" ? "var(--success)" : step.status === "error" ? "var(--error)" : "var(--border)"}`,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                  {STEP_ICONS[step.step]} {STEP_LABELS[step.step]}
+                </div>
+                <div style={{ width: "100%", height: 4, background: "var(--bg)", borderRadius: 2, marginBottom: 4, overflow: "hidden" }}>
+                  <div style={{ width: `${step.progress}%`, height: "100%", background: step.status === "error" ? "var(--error)" : "var(--accent)", borderRadius: 2, transition: "width 0.3s" }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {step.message || (step.status === "done" ? "完成" : "等待中")}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Tab 切换 */}
-      {project.status === "analyzed" && (
-        <>
-          <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "var(--bg-card)", borderRadius: 8, padding: 4 }}>
-            {(["storyboard", "characters", "timeline"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  flex: 1, padding: "10px 16px", borderRadius: 6, border: "none",
-                  background: activeTab === tab ? "var(--accent)" : "transparent",
-                  color: activeTab === tab ? "white" : "var(--text-muted)",
-                  cursor: "pointer", fontSize: 14, fontWeight: 500,
-                  transition: "all 0.2s",
-                }}
-              >
-                {tab === "storyboard" ? "🖼️ 分镜面板" : tab === "characters" ? "👤 角色列表" : "🎞️ 时间轴"}
-              </button>
-            ))}
+      {/* 统计卡片 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+        {[
+          { icon: "👤", label: "角色", count: project.characters.length },
+          { icon: "🎬", label: "场景", count: project.scenes.length },
+          { icon: "📐", label: "分镜", count: project.panels.length },
+          { icon: "🖼️", label: "图片", count: imageAssets.length },
+          { icon: "🎵", label: "音频", count: audioAssets.length },
+        ].map((s) => (
+          <div key={s.label} className="card" style={{ textAlign: "center", padding: 14 }}>
+            <div style={{ fontSize: 24 }}>{s.icon}</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{s.count}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.label}</div>
           </div>
+        ))}
+      </div>
 
-          {/* 分镜面板 */}
-          {activeTab === "storyboard" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-              {project.panels.map((panel, i) => (
-                <div key={panel.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
-                  {/* 图片区域 */}
-                  <div style={{
-                    height: 180, background: "var(--bg)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    borderBottom: "1px solid var(--border)",
-                  }}>
-                    {panel.imageUrl ? (
-                      <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <div style={{ color: "var(--text-muted)", fontSize: 40 }}>🎬</div>
-                    )}
-                  </div>
-                  {/* 信息 */}
-                  <div style={{ padding: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>#{i + 1} · {panel.camera}</span>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{panel.duration}s</span>
-                    </div>
-                    {panel.dialogue && (
-                      <div style={{ fontSize: 13, marginBottom: 4 }}>
-                        <strong>{panel.speaker}：</strong>&ldquo;{panel.dialogue}&rdquo;
-                      </div>
-                    )}
-                    {panel.narration && (
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                        旁白：{panel.narration}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      {/* 标签页切换 */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "var(--bg-card)", borderRadius: 10, padding: 4 }}>
+        {[
+          { id: "storyboard" as const, label: "📐 分镜列表" },
+          { id: "characters" as const, label: "👤 角色" },
+          { id: "timeline" as const, label: "⏱️ 时间轴" },
+          { id: "export" as const, label: "📦 导出" },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: "10px 0", borderRadius: 8, border: "none", cursor: "pointer",
+            background: tab === t.id ? "var(--accent)" : "transparent",
+            color: tab === t.id ? "white" : "var(--text-muted)",
+            fontSize: 13, fontWeight: 600, transition: "all 0.2s",
+          }}>{t.label}</button>
+        ))}
+      </div>
 
-          {/* 角色列表 */}
-          {activeTab === "characters" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-              {project.characters.map((char) => (
-                <div key={char.id} className="card">
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <div style={{
-                      width: 48, height: 48, borderRadius: "50%",
-                      background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 20, fontWeight: 700,
-                    }}>
-                      {char.name[0]}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{char.name}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{char.personality}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
-                    {char.description}
-                  </div>
-                </div>
-              ))}
+      {/* ==================== 分镜列表 ==================== */}
+      {tab === "storyboard" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+          {project.panels.map((panel, i) => (
+            <div key={panel.id} className="card" style={{ padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>#{i + 1}</span>
+                <span style={{ fontSize: 11, color: panel.status === "done" ? "var(--success)" : panel.status === "error" ? "var(--error)" : "var(--text-muted)" }}>
+                  {panel.camera} · {panel.duration}s
+                </span>
+              </div>
+              {/* 图片预览 */}
+              <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {panel.imageUrl ? (
+                  <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {panel.status === "error" ? "❌ 生成失败" : "⏳ 待生成"}
+                  </span>
+                )}
+              </div>
+              {/* 台词/旁白 */}
+              {panel.dialogue && <div style={{ fontSize: 13, marginBottom: 4 }}><strong>💬</strong> {panel.dialogue}</div>}
+              {panel.narration && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>📖 {panel.narration}</div>}
+              {/* Prompt */}
+              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                {panel.prompt}
+              </div>
             </div>
-          )}
-
-          {/* 时间轴 */}
-          {activeTab === "timeline" && (
-            <div style={{ position: "relative", paddingLeft: 32 }}>
-              <div style={{
-                position: "absolute", left: 12, top: 0, bottom: 0, width: 2,
-                background: "var(--border)",
-              }} />
-              {project.panels.map((panel, i) => (
-                <div key={panel.id} style={{
-                  position: "relative", marginBottom: 20, paddingLeft: 24,
-                }}>
-                  <div style={{
-                    position: "absolute", left: -26, top: 6,
-                    width: 12, height: 12, borderRadius: "50%",
-                    background: "var(--accent)", border: "2px solid var(--bg)",
-                  }} />
-                  <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
-                    <div style={{
-                      width: 80, height: 50, borderRadius: 6, background: "var(--bg)",
-                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                      overflow: "hidden",
-                    }}>
-                      {panel.imageUrl ? (
-                        <img src={panel.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <span style={{ fontSize: 20 }}>🎬</span>
-                      )}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>#{i + 1} · {panel.camera} · {panel.duration}s</div>
-                      {panel.dialogue && <div style={{ fontSize: 12, marginTop: 2 }}><b>{panel.speaker}：</b>{panel.dialogue}</div>}
-                      {panel.narration && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{panel.narration}</div>}
-                    </div>
-                    <div className="tag" style={{
-                      background: panel.status === "done" ? "rgba(34,197,94,0.15)" : "var(--bg)",
-                      color: panel.status === "done" ? "var(--success)" : "var(--text-muted)",
-                    }}>
-                      {panel.status === "done" ? "✓" : `${i + 1}`}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
 
-      {/* 草稿状态提示 */}
-      {project.status === "draft" && (
-        <div className="card" style={{ textAlign: "center", padding: 60 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🧠</div>
-          <h3 style={{ marginBottom: 8 }}>准备就绪</h3>
-          <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>
-            点击上方 &ldquo;开始 AI 分析&rdquo; 按钮，AI 将自动解析剧本、提取角色和场景、生成分镜方案
-          </p>
-          {!settings.llm.apiKey && (
-            <p style={{ color: "var(--warning)", fontSize: 13 }}>
-              ⚠️ 请先到 <a href="/settings" style={{ color: "var(--accent)" }}>设置页面</a> 配置 LLM API Key
-            </p>
-          )}
+      {/* ==================== 角色列表 ==================== */}
+      {tab === "characters" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+          {project.characters.map((char) => (
+            <div key={char.id} className="card" style={{ padding: 16 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
+                  {char.name[0]}
+                </div>
+                <div>
+                  <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{char.name}</h4>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 8px" }}>{char.personality}</p>
+                  <p style={{ fontSize: 12, lineHeight: 1.5 }}>{char.description}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ==================== 时间轴视图 ==================== */}
+      {tab === "timeline" && (
+        <div className="card" style={{ padding: 20 }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>⏱️ 分镜时间轴</h3>
+          <div style={{ display: "flex", gap: 2, overflowX: "auto", padding: "10px 0" }}>
+            {project.panels.map((panel, i) => (
+              <div key={panel.id} style={{
+                minWidth: panel.duration * 80, height: 80, borderRadius: 6,
+                background: panel.imageUrl ? `url(${panel.imageUrl}) center/cover` : "var(--bg)",
+                border: "1px solid var(--border)", display: "flex", flexDirection: "column",
+                justifyContent: "flex-end", padding: 6, position: "relative", flexShrink: 0,
+              }}>
+                <div style={{ position: "absolute", top: 4, left: 6, fontSize: 10, background: "rgba(0,0,0,0.6)", padding: "2px 6px", borderRadius: 4, color: "white" }}>
+                  #{i + 1} · {panel.duration}s
+                </div>
+                <div style={{ fontSize: 10, color: "white", textShadow: "0 1px 2px rgba(0,0,0,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {panel.dialogue || panel.narration || panel.transition}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
+            总时长: {project.panels.reduce((s, p) => s + (p.duration || 3), 0)}秒 · {project.panels.length} 个分镜
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 导出系统 ==================== */}
+      {tab === "export" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
+          {[
+            { icon: "🖼️", title: "PNG 分镜序列", desc: "导出每格分镜为高清 PNG", action: () => alert("导出 PNG 功能开发中") },
+            { icon: "📄", title: "PDF 漫画", desc: "生成可打印的 PDF 漫画书", action: () => alert("导出 PDF 功能开发中") },
+            { icon: "🎬", title: "MP4 视频", desc: "合成含配音和 BGM 的视频", action: () => handleRunPipeline("composition") },
+            { icon: "🎞️", title: "GIF 动图", desc: "生成可分享的 GIF 预览", action: () => alert("导出 GIF 功能开发中") },
+            { icon: "📋", title: "JSON 数据", desc: "导出完整项目数据备份", action: () => { const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${project.title}.json`; a.click(); } },
+            { icon: "📝", title: "Markdown 剧本", desc: "导出为 Markdown 格式剧本", action: () => { const md = `# ${project.title}\n\n${project.panels.map((p, i) => `## 分镜 ${i + 1}\n${p.narration || ""}\n${p.dialogue ? `> ${p.dialogue}` : ""}\n`).join("\n")}`; const blob = new Blob([md], { type: "text/markdown" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${project.title}.md`; a.click(); } },
+          ].map((item) => (
+            <div key={item.title} className="card" style={{ cursor: "pointer", padding: 20 }} onClick={item.action}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>{item.icon}</div>
+              <h4 style={{ margin: "0 0 4px", fontSize: 15 }}>{item.title}</h4>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ==================== 视频预览浮层 ==================== */}
+      {previewAsset && (
+        <div onClick={() => setPreviewAsset(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, cursor: "pointer" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "80vh" }}>
+            {previewAsset.type === "video" ? (
+              <video src={previewAsset.url} controls autoPlay style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
+            ) : previewAsset.type === "image" ? (
+              <img src={previewAsset.url} alt={previewAsset.name} style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
+            ) : previewAsset.type === "audio" ? (
+              <div style={{ background: "var(--bg-card)", padding: 40, borderRadius: 16, textAlign: "center" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>🎵</div>
+                <audio src={previewAsset.url} controls autoPlay />
+                <p style={{ marginTop: 12, color: "var(--text-muted)" }}>{previewAsset.name}</p>
+              </div>
+            ) : null}
+          </div>
+          <button onClick={() => setPreviewAsset(null)} style={{ position: "absolute", top: 20, right: 20, background: "rgba(255,255,255,0.2)", border: "none", color: "white", fontSize: 24, cursor: "pointer", borderRadius: "50%", width: 40, height: 40 }}>✕</button>
         </div>
       )}
     </div>
