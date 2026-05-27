@@ -7,16 +7,21 @@ import fs from "fs";
 
 // GET /api/assets/file/[id] - 提供资产文件
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const asset = await db.select().from(assets).where(eq(assets.id, id)).get();
-  if (!asset || !asset.path || !fs.existsSync(asset.path)) {
-    return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+  try {
+    const { id } = await params;
+    const asset = await db.select().from(assets).where(eq(assets.id, id)).get();
+    if (!asset || !asset.path || !fs.existsSync(asset.path)) {
+      return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+    }
+    const buffer = fs.readFileSync(asset.path);
+    return new NextResponse(buffer, {
+      headers: {
+        "Content-Type": asset.mimeType || "application/octet-stream",
+        "Content-Disposition": `inline; filename="${asset.name}"`,
+      },
+    });
+  } catch (error) {
+    console.error("获取资产文件时出错:", error);
+    return NextResponse.json({ error: "服务器内部错误" }, { status: 500 });
   }
-  const buffer = fs.readFileSync(asset.path);
-  return new NextResponse(buffer, {
-    headers: {
-      "Content-Type": asset.mimeType || "application/octet-stream",
-      "Content-Disposition": `inline; filename="${asset.name}"`,
-    },
-  });
 }

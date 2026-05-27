@@ -8,69 +8,72 @@ import fs from "fs";
 
 // GET /api/projects/[id]/export - 导出分镜
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const url = new URL(req.url);
-  const format = url.searchParams.get("format") || "json";
+  try {
+    const { id } = await params;
+    const url = new URL(req.url);
+    const format = url.searchParams.get("format") || "json";
 
-  const panelList = await db.select().from(panels).where(eq(panels.projectId, id)).orderBy(panels.index).all();
-  const assetList = await db.select().from(assets).where(eq(assets.projectId, id)).all();
+    const panelList = await db.select().from(panels).where(eq(panels.projectId, id)).orderBy(panels.index).all();
+    const assetList = await db.select().from(assets).where(eq(assets.projectId, id)).all();
 
-  const outDir = path.join(process.cwd(), "data", id, "export");
-  fs.mkdirSync(outDir, { recursive: true });
+    const outDir = path.join(process.cwd(), "data", id, "export");
+    fs.mkdirSync(outDir, { recursive: true });
 
-  if (format === "json") {
-    // 导出完整项目 JSON
-    const data = { projectId: id, panels: panelList, assets: assetList, exportedAt: new Date().toISOString() };
-    const filePath = path.join(outDir, `mangaforge_${id}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    const buffer = fs.readFileSync(filePath);
-    return new NextResponse(buffer, {
-      headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="mangaforge_${id}.json"` },
-    });
+    if (format === "json") {
+      const data = { projectId: id, panels: panelList, assets: assetList, exportedAt: new Date().toISOString() };
+      const filePath = path.join(outDir, `mangaforge_${id}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      const buffer = fs.readFileSync(filePath);
+      return new NextResponse(buffer, {
+        headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="mangaforge_${id}.json"` },
+      });
+    }
+
+    if (format === "srt") {
+      let srt = "";
+      let time = 0;
+      panelList.forEach((p, i) => {
+        const text = p.dialogue || p.narration || "";
+        if (!text) return;
+        const start = fmtSrt(time);
+        const end = fmtSrt(time + (p.duration || 3));
+        srt += `${i + 1}\n${start} --> ${end}\n${text}\n\n`;
+        time += p.duration || 3;
+      });
+      const filePath = path.join(outDir, `mangaforge_${id}.srt`);
+      fs.writeFileSync(filePath, srt);
+      const buffer = fs.readFileSync(filePath);
+      return new NextResponse(buffer, {
+        headers: { "Content-Type": "text/plain", "Content-Disposition": `attachment; filename="mangaforge_${id}.srt"` },
+      });
+    }
+
+    if (format === "storyboard") {
+      let md = `# 分镜脚本\n\n`;
+      panelList.forEach((p, i) => {
+        md += `## 分镜 ${i + 1}\n`;
+        md += `- **类型**: ${p.panelType}\n`;
+        md += `- **镜头**: ${p.camera}\n`;
+        if (p.dialogue) md += `- **台词**: ${p.dialogue}\n`;
+        if (p.narration) md += `- **旁白**: ${p.narration}\n`;
+        md += `- **时长**: ${p.duration}秒\n`;
+        md += `- **转场**: ${p.transition}\n`;
+        md += `- **Prompt**: ${p.prompt}\n\n`;
+      });
+      const filePath = path.join(outDir, `mangaforge_${id}_storyboard.md`);
+      fs.writeFileSync(filePath, md);
+      const buffer = fs.readFileSync(filePath);
+      return new NextResponse(buffer, {
+        headers: { "Content-Type": "text/markdown", "Content-Disposition": `attachment; filename="mangaforge_${id}_storyboard.md"` },
+      });
+    }
+
+    return NextResponse.json({ error: "不支持的格式" }, { status: 400 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "导出失败";
+    console.error("GET /api/projects/[id]/export error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  if (format === "srt") {
-    // 导出字幕文件
-    let srt = "";
-    let time = 0;
-    panelList.forEach((p, i) => {
-      const text = p.dialogue || p.narration || "";
-      if (!text) return;
-      const start = fmtSrt(time);
-      const end = fmtSrt(time + (p.duration || 3));
-      srt += `${i + 1}\n${start} --> ${end}\n${text}\n\n`;
-      time += p.duration || 3;
-    });
-    const filePath = path.join(outDir, `mangaforge_${id}.srt`);
-    fs.writeFileSync(filePath, srt);
-    const buffer = fs.readFileSync(filePath);
-    return new NextResponse(buffer, {
-      headers: { "Content-Type": "text/plain", "Content-Disposition": `attachment; filename="mangaforge_${id}.srt"` },
-    });
-  }
-
-  if (format === "storyboard") {
-    // 导出分镜脚本文档
-    let md = `# 分镜脚本\n\n`;
-    panelList.forEach((p, i) => {
-      md += `## 分镜 ${i + 1}\n`;
-      md += `- **类型**: ${p.panelType}\n`;
-      md += `- **镜头**: ${p.camera}\n`;
-      if (p.dialogue) md += `- **台词**: ${p.dialogue}\n`;
-      if (p.narration) md += `- **旁白**: ${p.narration}\n`;
-      md += `- **时长**: ${p.duration}秒\n`;
-      md += `- **转场**: ${p.transition}\n`;
-      md += `- **Prompt**: ${p.prompt}\n\n`;
-    });
-    const filePath = path.join(outDir, `mangaforge_${id}_storyboard.md`);
-    fs.writeFileSync(filePath, md);
-    const buffer = fs.readFileSync(filePath);
-    return new NextResponse(buffer, {
-      headers: { "Content-Type": "text/markdown", "Content-Disposition": `attachment; filename="mangaforge_${id}_storyboard.md"` },
-    });
-  }
-
-  return NextResponse.json({ error: "不支持的格式" }, { status: 400 });
 }
 
 function fmtSrt(sec: number): string {

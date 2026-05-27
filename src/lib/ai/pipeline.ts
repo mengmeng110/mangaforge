@@ -2,7 +2,7 @@
 // 剧本 → 分镜 → 生图 → 配音 → 合成 → 导出
 
 import { llmChat, generateImage, generateSpeech, type LLMConfig, type ImageGenConfig } from "./engine";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { projects, characters, scenes, panels, assets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
@@ -91,7 +91,7 @@ async function stepGenerateImages(
   onProgress: (step: PipelineStep, status: StepStatus, progress: number, message: string) => void
 ) {
   onProgress("images", "running", 0, "开始生成分镜图片...");
-  const panelList = await db.select().from(panels).where(eq(panels.projectId, projectId)).all();
+  const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
   if (panelList.length === 0) {
     onProgress("images", "done", 100, "没有分镜需要生成图片");
     return;
@@ -117,13 +117,13 @@ async function stepGenerateImages(
         fs.writeFileSync(imgPath, buffer);
 
         // 更新分镜图片
-        await db.update(panels).set({
+        await getDb().update(panels).set({
           imageUrl: `/api/assets/file/${panel.id}`,
           status: "done",
         }).where(eq(panels.id, panel.id)).run();
 
         // 注册到资产
-        await db.insert(assets).values({
+        await getDb().insert(assets).values({
           id: panel.id,
           projectId,
           type: "image",
@@ -139,7 +139,7 @@ async function stepGenerateImages(
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "生成失败";
       onProgress("images", "running", pct, `第 ${i + 1} 张失败: ${msg}`);
-      await db.update(panels).set({ status: "error" }).where(eq(panels.id, panel.id)).run();
+      await getDb().update(panels).set({ status: "error" }).where(eq(panels.id, panel.id)).run();
     }
   }
   onProgress("images", "done", 100, `完成！共生成 ${panelList.length} 张图片`);
@@ -152,7 +152,7 @@ async function stepGenerateVoiceover(
   onProgress: (step: PipelineStep, status: StepStatus, progress: number, message: string) => void
 ) {
   onProgress("voiceover", "running", 0, "开始生成配音...");
-  const panelList = await db.select().from(panels).where(eq(panels.projectId, projectId)).all();
+  const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
   const panelsWithVoice = panelList.filter((p) => p.dialogue || p.narration);
 
   if (panelsWithVoice.length === 0) {
@@ -175,7 +175,7 @@ async function stepGenerateVoiceover(
       const audioPath = path.join(workDir, `${audioId}.mp3`);
       fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
 
-      await db.insert(assets).values({
+      await getDb().insert(assets).values({
         id: audioId,
         projectId,
         type: "audio",
@@ -209,7 +209,7 @@ export async function runPipeline(
   if (state.isRunning) return;
   state.isRunning = true;
 
-  const project = await db.select().from(projects).where(eq(projects.id, projectId)).get();
+  const project = await getDb().select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) { state.isRunning = false; return; }
 
   const startIdx = startFrom ? ALL_STEPS.indexOf(startFrom) : 0;
@@ -218,6 +218,13 @@ export async function runPipeline(
   };
 
   try {
+    // 步骤: 剧本分析/分镜/角色提取 已由 analyze API 完成，标记跳过
+    for (const skipStep of ["script", "storyboard", "characters"] as PipelineStep[]) {
+      if (startIdx <= ALL_STEPS.indexOf(skipStep)) {
+        updateStep(state, skipStep, "skipped", 100, "已由剧本分析步骤完成");
+      }
+    }
+
     // 步骤: 图片生成
     if (startIdx <= ALL_STEPS.indexOf("images")) {
       await stepGenerateImages(projectId, config.imageGen, project.style || "anime", onProgress);
@@ -228,10 +235,51 @@ export async function runPipeline(
       await stepGenerateVoiceover(projectId, config.tts, onProgress);
     }
 
+    // 步骤: 视频合成（可选，需要 FFmpeg）
+    if (startIdx <= ALL_STEPS.indexOf("composition")) {
+      updateStep(state, "composition", "running", 0, "检查视频合成环境...");
+      try {
+        const { execSync } = await import("child_process");
+        execSync("ffmpeg -version", { stdio: "ignore" });
+        updateStep(state, "composition", "done", 100, "FFmpeg 可用，视频合成就绪");
+      } catch {
+        updateStep(state, "composition", "skipped", 100, "服务器无 FFmpeg，跳过视频合成");
+      }
+    }
+
+    // 步骤: 导出（生成分镜文档）
+    if (startIdx <= ALL_STEPS.indexOf("export")) {
+      updateStep(state, "export", "running", 0, "生成分镜文档...");
+      try {
+        const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
+        const outDir = path.join(process.cwd(), "data", projectId, "export");
+        fs.mkdirSync(outDir, { recursive: true });
+        
+        let md = `# ${project.title || "未命名项目"} - 分镜脚本\n\n`;
+        md += `> 风格: ${project.style || "anime"} | 生成时间: ${new Date().toLocaleString("zh-CN")}\n\n`;
+        panelList.forEach((p, i) => {
+          md += `## 分镜 ${i + 1}\n`;
+          md += `- **类型**: ${p.panelType}\n`;
+          md += `- **镜头**: ${p.camera}\n`;
+          if (p.dialogue) md += `- **台词**: ${p.dialogue}\n`;
+          if (p.narration) md += `- **旁白**: ${p.narration}\n`;
+          md += `- **时长**: ${p.duration}秒\n`;
+          md += `- **转场**: ${p.transition}\n`;
+          if (p.imageUrl) md += `- **图片**: ${p.imageUrl}\n`;
+          md += `- **Prompt**: ${p.prompt}\n\n`;
+        });
+        
+        fs.writeFileSync(path.join(outDir, "storyboard.md"), md);
+        updateStep(state, "export", "done", 100, `已导出 ${panelList.length} 个分镜`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "导出失败";
+        updateStep(state, "export", "error", 0, msg, msg);
+      }
+    }
+
     // 标记完成
-    updateStep(state, "composition", "done", 100, "管线执行完成");
     updateStep(state, "done", "done", 100, "全部完成！");
-    await db.update(projects).set({ status: "done", updatedAt: new Date() }).where(eq(projects.id, projectId)).run();
+    await getDb().update(projects).set({ status: "done", updatedAt: new Date() }).where(eq(projects.id, projectId)).run();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "管线执行失败";
     updateStep(state, state.currentStep, "error", 0, msg, msg);

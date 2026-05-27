@@ -21,6 +21,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!llmConfig?.baseUrl) {
     return NextResponse.json({ error: "请先配置 LLM 的 Base URL" }, { status: 400 });
   }
+  if (!llmConfig?.model) {
+    return NextResponse.json({ error: "请先配置 LLM 模型名" }, { status: 400 });
+  }
 
   // 读取原始剧本
   const scriptPath = path.join(process.cwd(), "data", id, "script.txt");

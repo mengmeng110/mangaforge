@@ -120,7 +120,7 @@ export async function composeVideo(
   // 2. 生成拼接列表
   const concatList = clipPaths.map((p) => `file '${p}'`).join("\n");
   const concatPath = path.join(tmpDir, "concat.txt");
-  fs.writeFileSync(concatList, concatPath);
+  fs.writeFileSync(concatPath, concatList);
 
   // 3. 拼接所有片段
   const finalPath = path.join(outDir, `mangaforge_${projectId}.mp4`);
