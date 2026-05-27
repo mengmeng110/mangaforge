@@ -1,4 +1,4 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
+// 数据库自动迁移脚本 — 每次启动时检查并创建缺失的表
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
@@ -14,7 +14,7 @@ const sqlite = new Database(DB_PATH);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
-// 自动创建所有表（首次启动时）
+// 创建所有表
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
@@ -54,7 +54,7 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS panels (
     id TEXT PRIMARY KEY,
-    scene_id TEXT NOT NULL,
+    scene_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     "index" INTEGER NOT NULL,
     panel_type TEXT DEFAULT 'dialogue',
@@ -101,7 +101,5 @@ sqlite.exec(`
   );
 `);
 
-// 导入 schema（drizzle-orm 需要）
-import * as schema from "./schema";
-
-export const db = drizzle(sqlite, { schema });
+sqlite.close();
+console.log("✅ 数据库表初始化完成");

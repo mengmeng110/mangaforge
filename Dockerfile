@@ -8,12 +8,12 @@ WORKDIR /app
 # 复制依赖文件
 COPY package.json ./
 
-# 配置 npm 重试和超时，使用 npmmirror 镜像加速
-RUN npm config set fetch-retries 5 \
-    && npm config set fetch-retry-mintimeout 20000 \
-    && npm config set fetch-retry-maxtimeout 120000 \
-    && npm config set registry https://registry.npmmirror.com \
-    && npm install --legacy-peer-deps 2>&1
+# 用 npm 安装（国内镜像 + 重试）
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm install --legacy-peer-deps
 
 # 复制源码
 COPY . .
@@ -27,5 +27,5 @@ RUN npm run build
 # 暴露端口
 EXPOSE 3000
 
-# 启动
+# 启动（数据库表会在首次 import db/index.ts 时自动创建）
 CMD ["npm", "start"]
