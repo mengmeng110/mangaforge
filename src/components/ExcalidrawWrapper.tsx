@@ -2,9 +2,6 @@
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 
-// 用变量拼接模块名，彻底阻止 webpack 静态分析
-const M = ["@excalidraw", "/", "excalidraw"].join("");
-
 const ExcalidrawWrapper = forwardRef(function ExcalidrawWrapper(
   { onChange, initialData }: { onChange?: (elements: any, state: any) => void; initialData?: any },
   ref
@@ -16,14 +13,11 @@ const ExcalidrawWrapper = forwardRef(function ExcalidrawWrapper(
   useImperativeHandle(ref, () => api);
 
   useEffect(() => {
-    // eval 隐藏导入路径，webpack 无法静态分析
-    const load = eval(`(function() { return function(m) { return import(m); }; })()`);
-    load(M)
-      .then((mod: any) => {
-        setComp(() => mod.Excalidraw);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    // 正常动态导入，webpack 会打包这个模块
+    import("@excalidraw/excalidraw").then((mod) => {
+      setComp(() => mod.Excalidraw);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   if (loading) {
@@ -42,8 +36,8 @@ const ExcalidrawWrapper = forwardRef(function ExcalidrawWrapper(
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#888" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>🎨</div>
-          <div>画布引擎未安装</div>
-          <div style={{ fontSize: 12, marginTop: 8, color: "#666" }}>请安装 @excalidraw/excalidraw</div>
+          <div>画布引擎加载失败</div>
+          <div style={{ fontSize: 12, marginTop: 8, color: "#666" }}>请刷新页面重试</div>
         </div>
       </div>
     );
