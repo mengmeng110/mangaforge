@@ -1,5 +1,5 @@
 // MangaForge AI 多供应商 LLM 引擎
-// 支持 OpenAI / Gemini / DeepSeek / 小米 等兼容 API
+// 支持 OpenAI / Gemini / DeepSeek / 通义千问 / 硅基流动 等兼容 API
 
 export interface LLMConfig {
   provider?: string;
@@ -26,6 +26,25 @@ function normalizeBaseUrl(raw: string): string {
   return url;
 }
 
+// 包装 fetch，加超时和更好的错误信息
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 60000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    return res;
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("abort") || msg.includes("AbortError")) {
+      throw new Error(`请求超时 (${timeoutMs / 1000}秒)，请检查网络或 API 地址: ${url}`);
+    }
+    // 常见: ENOTFOUND(域名错误), ECONNREFUSED(端口错误), fetch failed(网络不通)
+    throw new Error(`网络请求失败: ${msg} → 目标: ${url}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // LLM 对话补全
 export async function llmChat(config: LLMConfig, messages: { role: string; content: string }[]): Promise<string> {
   const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.openai.com/v1");
@@ -33,7 +52,7 @@ export async function llmChat(config: LLMConfig, messages: { role: string; conte
 
   console.log(`[LLM] 请求: ${url} 模型: ${config.model}`);
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -72,7 +91,7 @@ export async function generateImage(config: ImageGenConfig, prompt: string, opts
 
   console.log(`[生图] 请求: ${url}`);
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -85,7 +104,7 @@ export async function generateImage(config: ImageGenConfig, prompt: string, opts
       size: opts?.size || "1024x1024",
       response_format: "url",
     }),
-  });
+  }, 120000); // 生图超时更长
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "未知错误");
@@ -104,7 +123,7 @@ export async function generateSpeech(
   const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.openai.com/v1");
   const url = `${baseUrl}/v1/audio/speech`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

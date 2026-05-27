@@ -32,12 +32,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const script = fs.readFileSync(scriptPath, "utf-8");
 
+  console.log(`[Analyze] 开始分析项目 ${id}, LLM: ${llmConfig.baseUrl} / ${llmConfig.model}`);
+
   // 更新状态
   await db.update(projects).set({ status: "analyzing" }).where(eq(projects.id, id)).run();
 
   try {
     // AI 分析
     const result = await analyzeScript(llmConfig, script);
+    console.log(`[Analyze] 分析完成: ${result.characters.length}角色, ${result.scenes.length}场景, ${result.panels.length}分镜`);
 
     // 保存角色
     for (const char of result.characters) {
