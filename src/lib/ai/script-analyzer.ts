@@ -99,8 +99,39 @@ export async function analyzeScript(config: LLMConfig, script: string): Promise<
     { role: "user", content: `请分析以下剧本并输出分镜方案：\n\n${script}` },
   ]);
 
-  // 提取 JSON
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("AI 分析结果格式错误，无法提取 JSON");
-  return JSON.parse(jsonMatch[0]) as AnalysisResult;
+  // 提取 JSON — 兼容裸 JSON、```json 包裹、带前缀文本等各种格式
+  let jsonStr = "";
+
+  // 尝试1: 匹配 ```json ... ``` 代码块
+  const codeBlock = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlock) {
+    jsonStr = codeBlock[1].trim();
+  }
+
+  // 尝试2: 匹配最外层 { ... }（贪婪匹配）
+  if (!jsonStr) {
+    const braceMatch = response.match(/\{[\s\S]*\}/);
+    if (braceMatch) jsonStr = braceMatch[0];
+  }
+
+  // 尝试3: 逐行扫描找 JSON 开始
+  if (!jsonStr) {
+    const lines = response.split("\n");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().startsWith("{")) { start = i; break; }
+    }
+    if (start >= 0) jsonStr = lines.slice(start).join("\n");
+  }
+
+  if (!jsonStr) throw new Error("AI 未返回有效内容，请重试");
+
+  // 清理常见问题：尾部逗号、注释
+  jsonStr = jsonStr.replace(/,\s*([\]}])/g, "$1").replace(/\/\/.*$/gm, "");
+
+  try {
+    return JSON.parse(jsonStr) as AnalysisResult;
+  } catch (parseErr) {
+    throw new Error(`AI 返回的 JSON 格式有误，请重试。原始内容: ${jsonStr.slice(0, 200)}`);
+  }
 }
