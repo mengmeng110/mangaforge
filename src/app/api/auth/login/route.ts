@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 // 密码从环境变量读取，默认 "mangaforge"
-const SITE_PASSWORD = process.env.MANGAFORGE_PASSWORD || "mangaforge";
+const SITE_PASSWORD = process.env.MANGAFORGE_PASSWORD || "mengmeng";
 
 // POST /api/auth/login - 登录验证
 export async function POST(req: Request) {
