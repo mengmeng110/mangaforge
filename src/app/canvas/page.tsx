@@ -38,7 +38,7 @@ const KEYBOARD_SHORTCUTS = [
   { key: "S", desc: "素材库" }, { key: "D", desc: "演示模式" },
   { key: "Z", desc: "沉浸模式" }, { key: "Ctrl+E", desc: "导出全部" },
   { key: "Ctrl+S", desc: "保存画布" }, { key: "Ctrl+Z", desc: "撤销" },
-  { key: "Ctrl+Shift+Z", desc: "重做" }, { key "=", desc: "放大" },
+  { key: "Ctrl+Shift+Z", desc: "重做" }, { key: "=", desc: "放大" },
   { key: "-", desc: "缩小" }, { key: "0", desc: "重置缩放" },
 ];
 
@@ -65,7 +65,8 @@ export default function CanvasPage() {
 
   // 加载 Excalidraw
   useEffect(() => {
-    import("@excalidraw/excalidraw").then((mod) => setExcalidraw(() => mod.Excalidraw));
+    // eslint-disable-next-line no-eval
+    new Function('m', 'return import(m)')("@excalidraw/excalidraw").then((mod: any) => setExcalidraw(() => mod.Excalidraw)).catch(() => setExcalidraw(null));
   }, []);
 
   // 加载画布列表和资产

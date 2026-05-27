@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   return NextResponse.json({ error: "密码错误" }, { status: 401 });
 }
 
-// POST 或 DELETE /api/auth/logout - 退出登录
-export async function POST() {
+// POST /api/auth/logout - 退出登录（通过 fetch DELETE 调用）
+export async function DELETE() {
   const res = NextResponse.json({ success: true });
   res.cookies.delete("mangaforge_auth");
   return res;
