@@ -15,7 +15,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = await req.json();
   const llmConfig = body.llmConfig;
   if (!llmConfig?.apiKey) {
-    return NextResponse.json({ error: "请先配置 LLM API Key" }, { status: 400 });
+    return NextResponse.json({ error: "请先到 API 设置页面配置 LLM 的 API Key" }, { status: 400 });
+  }
+  if (!llmConfig?.baseUrl) {
+    return NextResponse.json({ error: "请先配置 LLM 的 Base URL" }, { status: 400 });
   }
 
   // 读取原始剧本
@@ -104,6 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "分析失败";
     await db.update(projects).set({ status: "error" }).where(eq(projects.id, id)).run();
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("剧本分析失败:", msg);
+    return NextResponse.json({ error: `AI 分析失败: ${msg}` }, { status: 500 });
   }
 }

@@ -58,6 +58,10 @@ export default function ProjectPage() {
 
   // 分析剧本
   const handleAnalyze = async () => {
+    if (!settings.llm.apiKey) {
+      alert("⚠️ 请先到 ⚙️ API 设置 页面配置 LLM 的 API Key！");
+      return;
+    }
     setAnalyzing(true);
     try {
       const res = await fetch(`/api/projects/${id}/analyze`, {
@@ -66,10 +70,16 @@ export default function ProjectPage() {
         body: JSON.stringify({ llmConfig: settings.llm }),
       });
       const data = await res.json();
-      if (data.error) alert(`分析失败: ${data.error}`);
-      else loadProject();
-    } catch { alert("分析请求失败"); }
-    finally { setAnalyzing(false); }
+      if (data.error) {
+        alert(`分析失败: ${data.error}`);
+      } else {
+        alert(`✅ 分析完成！\n角色: ${data.characterCount} 个\n场景: ${data.sceneCount} 个\n分镜: ${data.panelCount} 个`);
+        loadProject();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      alert(`分析请求失败: ${msg}`);
+    } finally { setAnalyzing(false); }
   };
 
   // 启动管线
