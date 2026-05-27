@@ -11,7 +11,20 @@ const STATUS_COLORS: Record<string, string> = {
   draft: "var(--text-muted)",
   analyzing: "var(--warning)",
   analyzed: "var(--success)",
+  generating: "var(--warning)",
+  composing: "var(--warning)",
+  done: "var(--success)",
   error: "var(--error)",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "📝 草稿",
+  analyzing: "⏳ 分析中",
+  analyzed: "✅ 已分析",
+  generating: "🎨 生成中",
+  composing: "🎥 合成中",
+  done: "🎉 已完成",
+  error: "❌ 出错",
 };
 
 export default function HomePage() {
@@ -57,7 +70,7 @@ export default function HomePage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <h3 style={{ margin: 0, fontSize: 18 }}>{p.title}</h3>
                   <span style={{ fontSize: 12, color: STATUS_COLORS[p.status] || "var(--text-muted)" }}>
-                    {p.status === "analyzed" ? "✅ 已分析" : p.status === "analyzing" ? "⏳ 分析中" : p.status === "error" ? "❌ 出错" : "📝 草稿"}
+                    {STATUS_LABELS[p.status] || p.status}
                   </span>
                 </div>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.5 }}>

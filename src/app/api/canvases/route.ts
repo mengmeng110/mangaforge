@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       data: data || undefined,
       thumbnail: thumbnail || undefined,
       updatedAt: new Date(),
-    }).where(eq(canvases, id)).run();
+    }).where(eq(canvases.id, id)).run();
     return NextResponse.json({ id });
   }
 

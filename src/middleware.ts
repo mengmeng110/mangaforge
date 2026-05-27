@@ -11,11 +11,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 静态资源和内部路由放行
+  // 静态资源放行（精确匹配常见静态文件扩展名）
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
-    pathname.includes(".")
+    /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|json|txt|xml|webp|avif|mp4|mp3|webm)$/.test(pathname)
   ) {
     return NextResponse.next();
   }
