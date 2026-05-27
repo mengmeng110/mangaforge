@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPipelineState, runPipeline } from "@/lib/ai/pipeline";
 import type { LLMConfig, ImageGenConfig } from "@/lib/ai/engine";
