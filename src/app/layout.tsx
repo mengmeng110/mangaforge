@@ -45,8 +45,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
             </div>
 
-            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
-              MangaForge v0.1.0
+            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>MangaForge v0.1.0</span>
+              <button
+                onClick={async () => {
+                  await fetch("/api/auth/login", { method: "DELETE" });
+                  window.location.href = "/login";
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}
+                title="退出登录"
+              >
+                🚪 退出
+              </button>
             </div>
           </nav>
 
