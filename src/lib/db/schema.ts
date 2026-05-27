@@ -65,3 +65,19 @@ export const panels = sqliteTable("panels", {
   transition: text("transition").default("cut"), // 转场: cut/fade/slide
   status: text("status").default("pending"), // pending/generating/done/error
 });
+
+// ==================== 资产管理 ====================
+export const assets = sqliteTable("assets", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // image/audio/video/subtitle/bgm
+  name: text("name").notNull(), // 文件名
+  path: text("path").notNull(), // 存储路径
+  url: text("url"), // 可访问URL
+  size: integer("size"), // 文件大小(字节)
+  mimeType: text("mime_type"), // MIME类型
+  source: text("source"), // 来源: ai-generated/uploaded/converted
+  metadata: text("metadata"), // JSON: 额外信息(prompt/voice/duration等)
+  tags: text("tags"), // JSON: 标签
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+});

@@ -37,6 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/create" style={navLinkStyle}>
                 ✨ 新建项目
               </a>
+              <a href="/assets" style={navLinkStyle}>
+                📦 资产管理
+              </a>
               <a href="/settings" style={navLinkStyle}>
                 ⚙️ API 设置
               </a>
