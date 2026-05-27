@@ -8,8 +8,12 @@ WORKDIR /app
 # 复制依赖文件
 COPY package.json ./
 
-# 用 npm 安装（没有 pnpm allowBuilds 问题）
-RUN npm install
+# 配置 npm 重试和超时，使用 npmmirror 镜像加速
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set registry https://registry.npmmirror.com \
+    && npm install --legacy-peer-deps 2>&1
 
 # 复制源码
 COPY . .
