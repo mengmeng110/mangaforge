@@ -44,11 +44,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }).run();
     }
 
-    // 保存场景
+    // 先插入场景，拿到 sceneId
+    const sceneIds: string[] = [];
     for (let i = 0; i < result.scenes.length; i++) {
       const scene = result.scenes[i];
+      const sceneId = uuid();
+      sceneIds.push(sceneId);
       await db.insert(scenes).values({
-        id: uuid(),
+        id: sceneId,
         projectId: id,
         index: i,
         title: scene.title,
@@ -60,18 +63,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }).run();
     }
 
-    // 保存分镜
+    // 保存分镜（关联到正确的 sceneId）
     for (let i = 0; i < result.panels.length; i++) {
       const panel = result.panels[i];
+      const sceneIdx = panel.sceneIndex ?? 0;
       await db.insert(panels).values({
         id: uuid(),
-        sceneId: "", // 后续关联
+        sceneId: sceneIds[sceneIdx] || sceneIds[0] || "",
         projectId: id,
         index: i,
         panelType: panel.dialogue ? "dialogue" : panel.narration ? "narration" : "action",
         prompt: panel.prompt,
         camera: panel.camera,
-        characters: JSON.stringify(panel.characters),
+        characters: JSON.stringify(panel.characters || []),
         dialogue: panel.dialogue || null,
         speaker: panel.speaker || null,
         narration: panel.narration || null,
