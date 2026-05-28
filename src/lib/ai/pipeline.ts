@@ -110,7 +110,7 @@ async function stepGenerateImages(
     onProgress("images", "running", pct, `生成第 ${i + 1}/${panelList.length} 张: ${panel.prompt?.slice(0, 30)}...`);
 
     try {
-      const fullPrompt = `${panel.prompt}, ${stylePrompt}`;
+      const fullPrompt = `${panel.prompt || ''}, ${stylePrompt}`;
       const urls = await generateImage(imageConfig, fullPrompt);
       if (urls.length > 0) {
         // 下载图片到本地
@@ -336,6 +336,8 @@ export async function runPipeline(
     // 步骤: 配音
     if (startIdx <= ALL_STEPS.indexOf("voiceover") && config.tts.apiKey) {
       await stepGenerateVoiceover(projectId, config.tts, onProgress);
+    } else if (startIdx <= ALL_STEPS.indexOf("voiceover")) {
+      updateStep(state, "voiceover", "skipped", 100, "未配置TTS，跳过配音");
     }
 
     // 步骤: 视频合成（可选，需要 FFmpeg）

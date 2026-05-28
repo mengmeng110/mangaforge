@@ -52,6 +52,35 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 6000
   }
 }
 
+// 指数退避重试，处理临时性故障（429/502/503）
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelayMs = 1000
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: unknown) {
+      lastError = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      // 只对可重试的状态码进行重试；429=限流、502=网关错误、503=服务不可用
+      const retryable =
+        msg.includes("(429)") || msg.includes("(502)") || msg.includes("(503)");
+      if (!retryable || attempt === maxRetries) {
+        throw e;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      console.warn(
+        `[LLM] 请求失败(${attempt + 1}/${maxRetries})，${delay}ms 后重试: ${msg}`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError; // 类型守卫，实际不可达
+}
+
 // LLM 对话补全
 export async function llmChat(config: LLMConfig, messages: { role: string; content: string }[]): Promise<string> {
   const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.openai.com/v1");
@@ -59,27 +88,30 @@ export async function llmChat(config: LLMConfig, messages: { role: string; conte
 
   console.log(`[LLM] 请求: ${url} 模型: ${config.model}`);
 
-  const res = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
+  const data = await retryWithBackoff(async () => {
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 4096,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "未知错误");
+      console.error(`[LLM] HTTP ${res.status}: ${errText}`);
+      throw new Error(`LLM API 请求失败 (${res.status}): ${errText.slice(0, 200)}`);
+    }
+
+    return res.json().catch(e => { throw new Error('JSON解析失败: ' + (e instanceof Error ? e.message : String(e))) });
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "未知错误");
-    console.error(`[LLM] HTTP ${res.status}: ${errText}`);
-    throw new Error(`LLM API 请求失败 (${res.status}): ${errText.slice(0, 200)}`);
-  }
-
-  const data = await res.json().catch(() => ({}));
   const content = data.choices?.[0]?.message?.content || "";
 
   if (!content) {

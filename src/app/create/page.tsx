@@ -34,12 +34,14 @@ export default function CreatePage() {
   const [customStyle, setCustomStyle] = useState("");
   const [showCustomStyle, setShowCustomStyle] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   const finalGenre = showCustomGenre ? customGenre.trim() : genre;
   const finalStyle = showCustomStyle ? customStyle.trim() || "anime" : style;
 
   const handleCreate = async () => {
     if (!title.trim() || !script.trim()) return;
+    setInlineError(null);
     setCreating(true);
     try {
       const res = await fetch("/api/projects", {
@@ -47,13 +49,16 @@ export default function CreatePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, script, genre: finalGenre, style: finalStyle }),
       });
+      if (!res.ok) {
+        throw new Error(`请求失败 (${res.status})`);
+      }
       const data = await res.json();
       if (data.id) {
         router.push(`/project/${data.id}`);
       }
     } catch (e) {
       console.error(e);
-      alert("创建失败，请重试");
+      setInlineError(e instanceof Error ? e.message : "创建失败，请重试");
     } finally {
       setCreating(false);
     }
@@ -69,6 +74,39 @@ export default function CreatePage() {
           输入你的故事，AI 会自动分析剧本、生成角色、创建分镜
         </p>
       </div>
+
+      {inlineError && (
+        <div
+          style={{
+            color: "#ef4444",
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            marginBottom: 20,
+            fontSize: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>⚠️ {inlineError}</span>
+          <button
+            onClick={() => setInlineError(null)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#ef4444",
+              cursor: "pointer",
+              fontSize: 16,
+              fontWeight: 700,
+              marginLeft: 12,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 标题 */}
       <div style={{ marginBottom: 24 }}>

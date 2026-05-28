@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface Project {
   id: string; title: string; genre: string; style: string;
@@ -30,10 +30,45 @@ const STATUS_LABELS: Record<string, string> = {
 export default function HomePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) {
+        throw new Error(`请求失败 (${res.status})`);
+      }
+      const data = await res.json();
+      setProjects(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载项目失败，请检查网络连接");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/projects").then(r => r.json()).then(setProjects).finally(() => setLoading(false));
-  }, []);
+    fetchProjects();
+  }, [fetchProjects]);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("确定要删除这个项目吗？此操作不可撤销。")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("删除失败");
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+    } catch {
+      alert("删除失败，请重试");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -51,6 +86,18 @@ export default function HomePage() {
 
       {loading ? (
         <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 60 }}>加载中...</div>
+      ) : error ? (
+        <div style={{ textAlign: "center", padding: 60 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+          <p style={{ color: "var(--error)", marginBottom: 16, fontSize: 16 }}>{error}</p>
+          <button
+            onClick={fetchProjects}
+            className="btn-primary"
+            style={{ padding: "8px 24px", cursor: "pointer", border: "none", borderRadius: 6, fontSize: 14 }}
+          >
+            🔄 重试
+          </button>
+        </div>
       ) : projects.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: 80 }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>🎬</div>
@@ -65,23 +112,51 @@ export default function HomePage() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
           {projects.map((p) => (
-            <a key={p.id} href={`/project/${p.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-              <div className="card" style={{ cursor: "pointer" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                  <h3 style={{ margin: 0, fontSize: 18 }}>{p.title}</h3>
-                  <span style={{ fontSize: 12, color: STATUS_COLORS[p.status] || "var(--text-muted)" }}>
-                    {STATUS_LABELS[p.status] || p.status}
-                  </span>
+            <div key={p.id} style={{ position: "relative" }}>
+              <a href={`/project/${p.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                <div className="card" style={{ cursor: "pointer", paddingRight: 40 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <h3 style={{ margin: 0, fontSize: 18 }}>{p.title}</h3>
+                    <span style={{ fontSize: 12, color: STATUS_COLORS[p.status] || "var(--text-muted)" }}>
+                      {STATUS_LABELS[p.status] || p.status}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                    {p.description || "暂无描述"}
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {p.genre && <span className="tag tag-genre">{p.genre}</span>}
+                    <span className="tag" style={{ background: "rgba(255,255,255,0.05)" }}>{p.style}</span>
+                  </div>
                 </div>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.5 }}>
-                  {p.description || "暂无描述"}
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {p.genre && <span className="tag tag-genre">{p.genre}</span>}
-                  <span className="tag" style={{ background: "rgba(255,255,255,0.05)" }}>{p.style}</span>
-                </div>
-              </div>
-            </a>
+              </a>
+              <button
+                onClick={(e) => handleDelete(e, p.id)}
+                disabled={deletingId === p.id}
+                title="删除项目"
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                  width: 28,
+                  height: 28,
+                  border: "none",
+                  borderRadius: 6,
+                  background: "rgba(255,60,60,0.1)",
+                  color: "var(--error, #ff3c3c)",
+                  cursor: deletingId === p.id ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: deletingId === p.id ? 0.5 : 1,
+                  transition: "background 0.2s",
+                  zIndex: 1,
+                }}
+              >
+                {deletingId === p.id ? "…" : "🗑"}
+              </button>
+            </div>
           ))}
         </div>
       )}

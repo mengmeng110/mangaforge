@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 
 // ==================== 类型 ====================
@@ -12,6 +13,9 @@ interface Project { id: string; title: string; genre: string; style: string; sta
 interface PipelineStep { step: string; status: string; progress: number; message: string; }
 interface PipelineState { steps: PipelineStep[]; currentStep: string; overallProgress: number; isRunning: boolean; }
 interface Asset { id: string; name: string; type: string; url: string; size: number | null; metadata: string | null; }
+
+type ToastType = "error" | "success" | "info";
+interface Toast { type: ToastType; text: string; }
 
 const STEP_ICONS: Record<string, string> = { script: "📝", storyboard: "🎬", characters: "👤", images: "🎨", video: "🎬", voiceover: "🎤", composition: "🎥", export: "📦", done: "✅" };
 const STEP_LABELS: Record<string, string> = { script: "剧本分析", storyboard: "分镜生成", characters: "角色提取", images: "图片生成", video: "分镜视频", voiceover: "配音合成", composition: "视频合成", export: "导出输出", done: "完成" };
@@ -26,32 +30,72 @@ export default function ProjectPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 显示提示（自动 4 秒消失）
+  const showToast = useCallback((type: ToastType, text: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ type, text });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
 
   // 加载项目
   const loadProject = useCallback(async () => {
-    const res = await fetch(`/api/projects/${id}`);
-    const data = await res.json();
-    setProject({
-      ...data,
-      characters: data.characters || [],
-      scenes: data.scenes || [],
-      panels: data.panels || [],
-    });
-  }, [id]);
+    try {
+      const res = await fetch(`/api/projects/${id}`);
+      if (res.status === 404) {
+        setNotFound(true);
+        return;
+      }
+      if (!res.ok) {
+        showToast("error", `加载项目失败 (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      if (!data || !data.id) {
+        setNotFound(true);
+        return;
+      }
+      setNotFound(false);
+      setProject({
+        ...data,
+        characters: data.characters || [],
+        scenes: data.scenes || [],
+        panels: data.panels || [],
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `加载项目失败: ${msg}`);
+    }
+  }, [id, showToast]);
 
   // 加载资产
   const loadAssets = useCallback(async () => {
-    const res = await fetch(`/api/assets?projectId=${id}`);
-    const data = await res.json();
-    setAssets(Array.isArray(data) ? data : []);
-  }, [id]);
+    try {
+      const res = await fetch(`/api/assets?projectId=${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setAssets(Array.isArray(data) ? data : []);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `加载资产失败: ${msg}`);
+    }
+  }, [id, showToast]);
 
   // 加载管线状态
   const loadPipeline = useCallback(async () => {
-    const res = await fetch(`/api/projects/${id}/pipeline`);
-    const data = await res.json();
-    setPipeline(data && data.steps ? data : null);
-  }, [id]);
+    try {
+      const res = await fetch(`/api/projects/${id}/pipeline`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPipeline(data && data.steps ? data : null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `加载管线状态失败: ${msg}`);
+    }
+  }, [id, showToast]);
 
   useEffect(() => { loadProject(); loadAssets(); loadPipeline(); }, [loadProject, loadAssets, loadPipeline]);
 
@@ -66,7 +110,7 @@ export default function ProjectPage() {
   // 分析剧本
   const handleAnalyze = async () => {
     if (!settings.llm.apiKey) {
-      alert("⚠️ 请先到 ⚙️ API 设置 页面配置 LLM 的 API Key！");
+      showToast("error", "⚠️ 请先到 ⚙️ API 设置 页面配置 LLM 的 API Key！");
       return;
     }
     setAnalyzing(true);
@@ -78,34 +122,66 @@ export default function ProjectPage() {
       });
       const data = await res.json();
       if (data.error) {
-        alert(`分析失败: ${data.error}`);
+        showToast("error", `分析失败: ${data.error}`);
       } else {
-        alert(`✅ 分析完成！\n角色: ${data.characterCount} 个\n场景: ${data.sceneCount} 个\n分镜: ${data.panelCount} 个`);
+        showToast("success", `✅ 分析完成！角色: ${data.characterCount} 个 · 场景: ${data.sceneCount} 个 · 分镜: ${data.panelCount} 个`);
         loadProject();
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "网络错误";
-      alert(`分析请求失败: ${msg}`);
+      showToast("error", `分析请求失败: ${msg}`);
     } finally { setAnalyzing(false); }
   };
 
   // 启动管线
   const handleRunPipeline = async (startFrom?: string) => {
-    const res = await fetch(`/api/projects/${id}/pipeline`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        llmConfig: settings.llm,
-        imageGenConfig: settings.imageGen,
-        videoGenConfig: settings.videoGen,
-        ttsConfig: settings.tts,
-        startFrom,
-      }),
-    });
-    const data = await res.json();
-    if (data.error) alert(data.error);
-    else { loadPipeline(); pollRef.current = setInterval(loadPipeline, 2000); }
+    try {
+      const res = await fetch(`/api/projects/${id}/pipeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          llmConfig: settings.llm,
+          imageGenConfig: settings.imageGen,
+          videoGenConfig: settings.videoGen,
+          ttsConfig: settings.tts,
+          startFrom,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast("error", data.error);
+      } else {
+        loadPipeline();
+        pollRef.current = setInterval(loadPipeline, 2000);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `启动管线失败: ${msg}`);
+    }
   };
+
+  // ==================== 404 页面 ====================
+  if (notFound) {
+    return (
+      <div style={{ textAlign: "center", padding: "100px 20px" }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>🔍</div>
+        <h2 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 8px" }}>项目未找到</h2>
+        <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>
+          ID 为 <code style={{ background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{id}</code> 的项目不存在或已被删除。
+        </p>
+        <Link
+          href="/"
+          style={{
+            display: "inline-block", padding: "10px 24px", borderRadius: 8,
+            background: "var(--accent)", color: "white", textDecoration: "none",
+            fontWeight: 600, fontSize: 14,
+          }}
+        >
+          ← 返回首页
+        </Link>
+      </div>
+    );
+  }
 
   if (!project) return <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 80 }}>加载中...</div>;
 
@@ -115,6 +191,24 @@ export default function ProjectPage() {
 
   return (
     <div className="animate-fade-in">
+      {/* Toast 提示 */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: 20, right: 20, zIndex: 9999,
+          padding: "12px 20px", borderRadius: 10, fontSize: 14,
+          maxWidth: 420, boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+          background: toast.type === "error" ? "var(--error)" : toast.type === "success" ? "var(--success)" : "var(--accent)",
+          color: "white",
+        }}>
+          {toast.text}
+        </div>
+      )}
+
+      {/* 返回首页链接 */}
+      <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, color: "var(--text-muted)", textDecoration: "none", marginBottom: 16 }}>
+        ← 返回首页
+      </Link>
+
       {/* 项目头部 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
@@ -293,10 +387,10 @@ export default function ProjectPage() {
       {tab === "export" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
           {[
-            { icon: "🖼️", title: "PNG 分镜序列", desc: "导出每格分镜为高清 PNG", action: () => alert("导出 PNG 功能开发中") },
-            { icon: "📄", title: "PDF 漫画", desc: "生成可打印的 PDF 漫画书", action: () => alert("导出 PDF 功能开发中") },
+            { icon: "🖼️", title: "PNG 分镜序列", desc: "导出每格分镜为高清 PNG", action: () => showToast("info", "🖼️ 导出 PNG 功能开发中") },
+            { icon: "📄", title: "PDF 漫画", desc: "生成可打印的 PDF 漫画书", action: () => showToast("info", "📄 导出 PDF 功能开发中") },
             { icon: "🎬", title: "MP4 视频", desc: "合成含配音和 BGM 的视频", action: () => handleRunPipeline("composition") },
-            { icon: "🎞️", title: "GIF 动图", desc: "生成可分享的 GIF 预览", action: () => alert("导出 GIF 功能开发中") },
+            { icon: "🎞️", title: "GIF 动图", desc: "生成可分享的 GIF 预览", action: () => showToast("info", "🎞️ 导出 GIF 功能开发中") },
             { icon: "📋", title: "JSON 数据", desc: "导出完整项目数据备份", action: () => { const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${project.title}.json`; a.click(); } },
             { icon: "📝", title: "Markdown 剧本", desc: "导出为 Markdown 格式剧本", action: () => { const md = `# ${project.title}\n\n${project.panels.map((p, i) => `## 分镜 ${i + 1}\n${p.narration || ""}\n${p.dialogue ? `> ${p.dialogue}` : ""}\n`).join("\n")}`; const blob = new Blob([md], { type: "text/markdown" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${project.title}.md`; a.click(); } },
           ].map((item) => (
