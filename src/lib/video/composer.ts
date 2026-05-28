@@ -40,7 +40,8 @@ function kenBurnsFilter(duration: number, index: number): string {
   const zoomStart = 1.0;
   const zoomEnd = 1.15;
   const direction = index % 2 === 0 ? 1 : -1;
-  return `zoompan=z='min(zoom+${(zoomEnd - zoomStart) / duration}*(${duration}*25)+${zoomStart},${zoomEnd})':x='iw/2-(iw/zoom/2)+${direction}*(${duration}*25)*0.5':y='ih/2-(ih/zoom/2)':d=${duration * 25}:s=1920x1080:fps=25`;
+  const step = (zoomEnd - zoomStart) / (duration * 25);
+  return `zoompan=z='min(zoom+${step},${zoomEnd})':x='iw/2-(iw/zoom/2)+${direction}*(${duration}*25)*0.5':y='ih/2-(ih/zoom/2)':d=${duration * 25}:s=1920x1080:fps=25`;
 }
 
 // 合成单个分镜片段
@@ -64,7 +65,9 @@ async function composePanel(
     await downloadFile(panel.imageUrl, imgPath);
     const kbFilter = kenBurnsFilter(panel.duration, index);
     await execAsync(
-      `ffmpeg -y -i "${imgPath}" -vf "${kbFilter}" -t ${panel.duration} -c:v libx264 -pix_fmt yuv420p -r 25 "${outputPath}"`
+      panel.audioUrl
+      ? `ffmpeg -y -i "${imgPath}" -i "${panel.audioUrl}" -vf "${kbFilter}" -t ${panel.duration} -c:v libx264 -pix_fmt yuv420p -c:a aac -r 25 -shortest "${outputPath}"`
+      : `ffmpeg -y -i "${imgPath}" -vf "${kbFilter}" -t ${panel.duration} -c:v libx264 -pix_fmt yuv420p -r 25 "${outputPath}"`
     );
   } else {
     // 无素材，生成黑屏

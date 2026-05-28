@@ -45,6 +45,8 @@ const STEP_LABELS: Record<PipelineStep, string> = {
 };
 
 // 内存中的管线状态存储
+const pipelineLocks = new Map<string, boolean>();
+
 const pipelineStates = new Map<string, PipelineState>();
 
 // 获取管线状态
@@ -225,7 +227,7 @@ async function stepGenerateVideos(
         onProgress("video", "running", pct, `提交第 ${idx + 1}/${panelsWithImage.length} 段视频...`);
 
         // 构建视频 prompt
-        const prompt = `anime style, ${panel.camera || "medium shot"}, ${panel.prompt || ""}, smooth animation, cinematic`;
+        const prompt = `anime style, ${panel.camera || "medium shot"}, ${panel.prompt || "detailed illustration"}, smooth animation, cinematic`;
         
         // 获取图片完整 URL（需要拼接域名，这里用相对路径先存本地）
         const imgPath = path.join(process.cwd(), "data", projectId, "images", `${panel.id}.png`);
@@ -233,8 +235,12 @@ async function stepGenerateVideos(
           throw new Error(`分镜图片不存在: ${panel.id}`);
         }
 
+        // 将本地图片转为 data URI（API 需要 URL，不接受本地路径）
+        const imgBuffer = fs.readFileSync(imgPath);
+        const imgBase64 = `data:image/png;base64,${imgBuffer.toString("base64")}`;
+
         // 提交视频生成任务
-        const taskId = await submitVideoTask(videoConfig, imgPath, prompt);
+        const taskId = await submitVideoTask(videoConfig, imgBase64, prompt);
         onProgress("video", "running", pct, `等待第 ${idx + 1} 段视频生成... (${taskId})`);
 
         // 等待完成
@@ -294,11 +300,13 @@ export async function runPipeline(
   startFrom?: PipelineStep
 ): Promise<void> {
   const state = getPipelineState(projectId);
-  if (state.isRunning) return;
+  if (pipelineLocks.get(projectId)) return;
+  pipelineLocks.set(projectId, true);
   state.isRunning = true;
 
   const project = await getDb().select().from(projects).where(eq(projects.id, projectId)).get();
-  if (!project) { state.isRunning = false; return; }
+  if (!project) { state.isRunning = false;
+    pipelineLocks.set(projectId, false); return; }
 
   const startIdx = startFrom ? ALL_STEPS.indexOf(startFrom) : 0;
   const onProgress = (step: PipelineStep, status: StepStatus, progress: number, message: string) => {
@@ -380,6 +388,7 @@ export async function runPipeline(
     updateStep(state, state.currentStep, "error", 0, msg, msg);
   } finally {
     state.isRunning = false;
+    pipelineLocks.set(projectId, false);
   }
 }
 

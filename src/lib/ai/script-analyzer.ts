@@ -108,10 +108,17 @@ export async function analyzeScript(config: LLMConfig, script: string): Promise<
     jsonStr = codeBlock[1].trim();
   }
 
-  // 尝试2: 匹配最外层 { ... }（贪婪匹配）
+  // 尝试2: 用括号平衡法提取最外层 { ... }
   if (!jsonStr) {
-    const braceMatch = response.match(/\{[\s\S]*\}/);
-    if (braceMatch) jsonStr = braceMatch[0];
+    const start = response.indexOf("{");
+    if (start >= 0) {
+      let depth = 0;
+      for (let i = start; i < response.length; i++) {
+        if (response[i] === "{") depth++;
+        if (response[i] === "}") depth--;
+        if (depth === 0) { jsonStr = response.slice(start, i + 1); break; }
+      }
+    }
   }
 
   // 尝试3: 逐行扫描找 JSON 开始
