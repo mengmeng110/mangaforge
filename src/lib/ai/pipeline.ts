@@ -10,7 +10,7 @@ import path from "path";
 import fs from "fs";
 
 export type PipelineStep = "script" | "storyboard" | "characters" | "images" | "video" | "voiceover" | "composition" | "export" | "done";
-export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
+export type StepStatus = "pending" | "running" | "done" | "error" | "skipped" | "cancelled";
 
 export interface PipelineProgress {
   step: PipelineStep;
@@ -28,6 +28,7 @@ export interface PipelineState {
   currentStep: PipelineStep;
   overallProgress: number;
   isRunning: boolean;
+  cancelled?: boolean;
 }
 
 const ALL_STEPS: PipelineStep[] = ["script", "storyboard", "characters", "images", "video", "voiceover", "composition", "export", "done"];
@@ -66,6 +67,23 @@ export function getPipelineState(projectId: string): PipelineState {
     });
   }
   return pipelineStates.get(projectId)!;
+}
+
+// 取消管线
+export function cancelPipeline(projectId: string): boolean {
+  const state = pipelineStates.get(projectId);
+  if (!state || !state.isRunning) return false;
+  state.cancelled = true;
+  state.isRunning = false;
+  // 将当前运行中的步骤标记为 cancelled
+  for (const step of state.steps) {
+    if (step.status === "running") {
+      step.status = "cancelled";
+      step.message = "已被用户取消";
+      step.finishedAt = Date.now();
+    }
+  }
+  return true;
 }
 
 // 更新单步状态
@@ -303,6 +321,7 @@ export async function runPipeline(
   if (pipelineLocks.get(projectId)) return;
   pipelineLocks.set(projectId, true);
   state.isRunning = true;
+  state.cancelled = false;
 
   const project = await getDb().select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project) { state.isRunning = false;
@@ -321,12 +340,19 @@ export async function runPipeline(
       }
     }
 
+    // 管线取消检查点
+    const checkCancelled = () => {
+      if (state.cancelled) throw new Error("__PIPELINE_CANCELLED__");
+    };
+
     // 步骤: 图片生成
+    checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("images")) {
       await stepGenerateImages(projectId, config.imageGen, project.style || "anime", onProgress);
     }
 
     // 步骤: 分镜视频生成（可选）
+    checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("video") && config.videoGen?.apiKey) {
       await stepGenerateVideos(projectId, config.videoGen, onProgress);
     } else if (startIdx <= ALL_STEPS.indexOf("video")) {
@@ -334,6 +360,7 @@ export async function runPipeline(
     }
 
     // 步骤: 配音
+    checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("voiceover") && config.tts.apiKey) {
       await stepGenerateVoiceover(projectId, config.tts, onProgress);
     } else if (startIdx <= ALL_STEPS.indexOf("voiceover")) {
@@ -341,6 +368,7 @@ export async function runPipeline(
     }
 
     // 步骤: 视频合成（可选，需要 FFmpeg）
+    checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("composition")) {
       updateStep(state, "composition", "running", 0, "检查视频合成环境...");
       try {
@@ -353,6 +381,7 @@ export async function runPipeline(
     }
 
     // 步骤: 导出（生成分镜文档）
+    checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("export")) {
       updateStep(state, "export", "running", 0, "生成分镜文档...");
       try {
@@ -386,8 +415,13 @@ export async function runPipeline(
     updateStep(state, "done", "done", 100, "全部完成！");
     await getDb().update(projects).set({ status: "done", updatedAt: new Date() }).where(eq(projects.id, projectId)).run();
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "管线执行失败";
-    updateStep(state, state.currentStep, "error", 0, msg, msg);
+    if (state.cancelled) {
+      // 用户主动取消，不标记为 error
+      updateStep(state, state.currentStep, "cancelled", 0, "管线已被用户取消");
+    } else {
+      const msg = e instanceof Error ? e.message : "管线执行失败";
+      updateStep(state, state.currentStep, "error", 0, msg, msg);
+    }
   } finally {
     state.isRunning = false;
     pipelineLocks.set(projectId, false);

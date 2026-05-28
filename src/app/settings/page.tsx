@@ -73,7 +73,7 @@ export default function SettingsPage() {
               onChange={(e) => settings.setLLM({ ...settings.llm, apiKey: e.target.value })}
               placeholder="sk-..." />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="settings-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>模型</label>
               <input className="input" value={settings.llm.model}

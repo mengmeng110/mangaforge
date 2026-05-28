@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 interface Project {
   id: string; title: string; genre: string; style: string;
@@ -32,6 +32,21 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"createdAt" | "title">("createdAt");
+
+  const filteredAndSortedProjects = useMemo(() => {
+    let result = projects;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter((p) => p.title.toLowerCase().includes(q));
+    }
+    result = [...result].sort((a, b) => {
+      if (sortBy === "title") return a.title.localeCompare(b.title, "zh");
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    return result;
+  }, [projects, searchQuery, sortBy]);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
@@ -84,6 +99,53 @@ export default function HomePage() {
         </a>
       </div>
 
+      {!loading && projects.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 20,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <input
+            type="text"
+            placeholder="🔍 搜索项目标题..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              minWidth: 200,
+              padding: "10px 14px",
+              border: "1px solid var(--border, rgba(255,255,255,0.12))",
+              borderRadius: 8,
+              background: "var(--card-bg, rgba(255,255,255,0.04))",
+              color: "inherit",
+              fontSize: 14,
+              outline: "none",
+            }}
+          />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "createdAt" | "title")}
+            style={{
+              padding: "10px 14px",
+              border: "1px solid var(--border, rgba(255,255,255,0.12))",
+              borderRadius: 8,
+              background: "var(--card-bg, rgba(255,255,255,0.04))",
+              color: "inherit",
+              fontSize: 14,
+              cursor: "pointer",
+              outline: "none",
+            }}
+          >
+            <option value="createdAt">按创建时间排序</option>
+            <option value="title">按名称排序</option>
+          </select>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 60 }}>加载中...</div>
       ) : error ? (
@@ -98,7 +160,7 @@ export default function HomePage() {
             🔄 重试
           </button>
         </div>
-      ) : projects.length === 0 ? (
+      ) : filteredAndSortedProjects.length === 0 && !searchQuery.trim() ? (
         <div className="card" style={{ textAlign: "center", padding: 80 }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>🎬</div>
           <h3 style={{ marginBottom: 8 }}>还没有项目</h3>
@@ -109,9 +171,16 @@ export default function HomePage() {
             开始第一个项目
           </a>
         </div>
+      ) : filteredAndSortedProjects.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+          <p style={{ color: "var(--text-muted)", fontSize: 16 }}>
+            没有找到匹配「{searchQuery}」的项目
+          </p>
+        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-          {projects.map((p) => (
+        <div className="project-grid">
+          {filteredAndSortedProjects.map((p) => (
             <div key={p.id} style={{ position: "relative" }}>
               <a href={`/project/${p.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
                 <div className="card" style={{ cursor: "pointer", paddingRight: 40 }}>

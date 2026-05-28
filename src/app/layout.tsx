@@ -13,9 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <ErrorBoundary>
-          <div style={{ display: "flex", minHeight: "100vh" }}>
+          <div className="app-layout">
             <Sidebar />
-            <main style={{ flex: 1, padding: 32, overflow: "auto" }}>
+            <main className="app-main">
               {children}
             </main>
           </div>

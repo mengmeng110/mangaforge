@@ -29,6 +29,9 @@ export default function ProjectPage() {
   const [tab, setTab] = useState<"storyboard" | "characters" | "timeline" | "export">("storyboard");
   const [analyzing, setAnalyzing] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const [editingField, setEditingField] = useState<string | null>(null); // "panelId:field"
+  const [editValue, setEditValue] = useState<string>("");
+  const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -160,6 +163,66 @@ export default function ProjectPage() {
     }
   };
 
+  // 取消管线
+  const handleCancelPipeline = async () => {
+    try {
+      const res = await fetch(`/api/projects/${id}/pipeline/cancel`, { method: "POST" });
+      const data = await res.json();
+      if (data.error) {
+        showToast("error", data.error);
+      } else {
+        showToast("info", "🛑 管线已取消");
+        loadPipeline();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `取消失败: ${msg}`);
+    }
+  };
+
+  // ==================== 分镜内联编辑 ====================
+  const handleStartEdit = useCallback((panelId: string, field: string, currentValue: string | null | number) => {
+    const key = `${panelId}:${field}`;
+    setEditingField(key);
+    setEditValue(currentValue != null ? String(currentValue) : "");
+    // 下一帧聚焦输入框
+    setTimeout(() => editInputRef.current?.focus(), 0);
+  }, []);
+
+  const handleSaveField = useCallback(async (panelId: string, field: string) => {
+    setEditingField(null);
+    const original = project?.panels.find((p) => p.id === panelId);
+    if (!original) return;
+    const originalValue = String((original as unknown as Record<string, unknown>)[field] ?? "");
+    // 值未变化时不发请求
+    if (editValue === originalValue) return;
+    try {
+      const res = await fetch(`/api/projects/${id}/panels/${panelId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: editValue || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast("error", `保存失败: ${data.error || res.status}`);
+        return;
+      }
+      const updated = await res.json();
+      // 乐观更新本地 state
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          panels: prev.panels.map((p) => (p.id === panelId ? { ...p, ...updated } : p)),
+        };
+      });
+      showToast("success", "✅ 已保存");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      showToast("error", `保存失败: ${msg}`);
+    }
+  }, [editValue, id, project, showToast]);
+
   // ==================== 404 页面 ====================
   if (notFound) {
     return (
@@ -238,27 +301,41 @@ export default function ProjectPage() {
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 16 }}>🔧 生产管线</h3>
-            <span style={{ fontSize: 13, color: pipeline.isRunning ? "var(--warning)" : "var(--success)" }}>
-              {pipeline.isRunning ? "⏳ 运行中..." : pipeline.overallProgress >= 100 ? "✅ 完成" : "⏸️ 暂停"}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, color: pipeline.isRunning ? "var(--warning)" : pipeline.steps.some((s) => s.status === "cancelled") ? "var(--error)" : "var(--success)" }}>
+                {pipeline.isRunning ? "⏳ 运行中..." : pipeline.steps.some((s) => s.status === "cancelled") ? "🛑 已取消" : pipeline.overallProgress >= 100 ? "✅ 完成" : "⏸️ 暂停"}
+              </span>
+              {pipeline.isRunning && (
+                <button
+                  onClick={handleCancelPipeline}
+                  style={{
+                    padding: "4px 14px", borderRadius: 6, border: "1px solid var(--error)",
+                    background: "var(--error)", color: "white", fontSize: 12, fontWeight: 600,
+                    cursor: "pointer", transition: "all 0.2s",
+                  }}
+                >
+                  ⛔ 取消管线
+                </button>
+              )}
+            </div>
           </div>
           {/* 总进度条 */}
           <div style={{ width: "100%", height: 8, background: "var(--bg)", borderRadius: 4, marginBottom: 16, overflow: "hidden" }}>
             <div style={{ width: `${pipeline.overallProgress}%`, height: "100%", background: "var(--accent)", borderRadius: 4, transition: "width 0.5s" }} />
           </div>
           {/* 步骤列表 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+          <div className="pipeline-grid">
             {pipeline.steps.filter((s) => s.step !== "done").map((step) => (
               <div key={step.step} style={{
                 padding: 12, borderRadius: 10,
-                background: step.status === "running" ? "rgba(124,92,252,0.08)" : step.status === "done" ? "rgba(34,197,94,0.08)" : step.status === "error" ? "rgba(239,68,68,0.08)" : "var(--bg)",
-                border: `1px solid ${step.status === "running" ? "var(--accent)" : step.status === "done" ? "var(--success)" : step.status === "error" ? "var(--error)" : "var(--border)"}`,
+                background: step.status === "running" ? "rgba(124,92,252,0.08)" : step.status === "done" ? "rgba(34,197,94,0.08)" : step.status === "error" ? "rgba(239,68,68,0.08)" : step.status === "cancelled" ? "rgba(239,68,68,0.06)" : "var(--bg)",
+                border: `1px solid ${step.status === "running" ? "var(--accent)" : step.status === "done" ? "var(--success)" : step.status === "error" || step.status === "cancelled" ? "var(--error)" : "var(--border)"}`,
               }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
                   {STEP_ICONS[step.step]} {STEP_LABELS[step.step]}
                 </div>
                 <div style={{ width: "100%", height: 4, background: "var(--bg)", borderRadius: 2, marginBottom: 4, overflow: "hidden" }}>
-                  <div style={{ width: `${step.progress}%`, height: "100%", background: step.status === "error" ? "var(--error)" : "var(--accent)", borderRadius: 2, transition: "width 0.3s" }} />
+                  <div style={{ width: `${step.progress}%`, height: "100%", background: step.status === "error" || step.status === "cancelled" ? "var(--error)" : "var(--accent)", borderRadius: 2, transition: "width 0.3s" }} />
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {step.message || (step.status === "done" ? "完成" : "等待中")}
@@ -270,7 +347,7 @@ export default function ProjectPage() {
       )}
 
       {/* 统计卡片 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="stats-grid">
         {[
           { icon: "👤", label: "角色", count: project.characters.length },
           { icon: "🎬", label: "场景", count: project.scenes.length },
@@ -305,40 +382,114 @@ export default function ProjectPage() {
 
       {/* ==================== 分镜列表 ==================== */}
       {tab === "storyboard" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
-          {project.panels.map((panel, i) => (
-            <div key={panel.id} className="card" style={{ padding: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>#{i + 1}</span>
-                <span style={{ fontSize: 11, color: panel.status === "done" ? "var(--success)" : panel.status === "error" ? "var(--error)" : "var(--text-muted)" }}>
-                  {panel.camera} · {panel.duration}s
-                </span>
-              </div>
-              {/* 图片预览 */}
-              <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {panel.imageUrl ? (
-                  <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <div className="storyboard-grid">
+          {project.panels.map((panel, i) => {
+            // 辅助：渲染可编辑字段
+            const renderEditable = (panelId: string, field: "dialogue" | "narration" | "camera", icon: string, placeholder: string, textStyle: React.CSSProperties = {}) => {
+              const key = `${panelId}:${field}`;
+              const value = (panel as unknown as Record<string, unknown>)[field] as string | null;
+              if (editingField === key) {
+                const isMultiline = field === "narration";
+                const commonStyle: React.CSSProperties = {
+                  width: "100%", fontSize: textStyle.fontSize || 13, border: "1px solid var(--accent)",
+                  borderRadius: 4, padding: "4px 6px", outline: "none", background: "var(--bg)",
+                  color: "var(--text)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.4,
+                };
+                return isMultiline ? (
+                  <textarea
+                    ref={editInputRef as React.RefObject<HTMLTextAreaElement>}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => handleSaveField(panelId, field)}
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setEditingField(null); } if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveField(panelId, field); } }}
+                    rows={2}
+                    style={{ ...commonStyle, ...textStyle, minHeight: 48 }}
+                  />
                 ) : (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {panel.status === "error" ? "❌ 生成失败" : "⏳ 待生成"}
+                  <input
+                    ref={editInputRef as React.RefObject<HTMLInputElement>}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => handleSaveField(panelId, field)}
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setEditingField(null); } if (e.key === "Enter") { e.preventDefault(); handleSaveField(panelId, field); } }}
+                    style={{ ...commonStyle, ...textStyle }}
+                  />
+                );
+              }
+              return (
+                <div
+                  onClick={() => handleStartEdit(panelId, field, value)}
+                  style={{ cursor: "pointer", borderRadius: 4, padding: "2px 4px", transition: "background 0.15s", ...textStyle }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(124,92,252,0.06)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                  title="点击编辑"
+                >
+                  <strong>{icon}</strong> {value || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{placeholder}</span>}
+                </div>
+              );
+            };
+
+            return (
+              <div key={panel.id} className="card" style={{ padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>#{i + 1}</span>
+                  {/* 镜头可编辑 */}
+                  <span style={{ fontSize: 11, color: panel.status === "done" ? "var(--success)" : panel.status === "error" ? "var(--error)" : "var(--text-muted)" }}>
+                    {(() => {
+                      const camKey = `${panel.id}:camera`;
+                      if (editingField === camKey) {
+                        return (
+                          <input
+                            ref={editInputRef as React.RefObject<HTMLInputElement>}
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleSaveField(panel.id, "camera")}
+                            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setEditingField(null); } if (e.key === "Enter") { e.preventDefault(); handleSaveField(panel.id, "camera"); } }}
+                            style={{ fontSize: 11, border: "1px solid var(--accent)", borderRadius: 3, padding: "1px 4px", outline: "none", background: "var(--bg)", color: "var(--text)", width: 80 }}
+                          />
+                        );
+                      }
+                      return (
+                        <span
+                          onClick={() => handleStartEdit(panel.id, "camera", panel.camera)}
+                          style={{ cursor: "pointer", borderRadius: 3, padding: "1px 4px", transition: "background 0.15s" }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLSpanElement).style.background = "rgba(124,92,252,0.06)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLSpanElement).style.background = "transparent"; }}
+                          title="点击编辑镜头"
+                        >
+                          {panel.camera || "未设置"} · {panel.duration}s
+                        </span>
+                      );
+                    })()}
                   </span>
-                )}
+                </div>
+                {/* 图片预览 */}
+                <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {panel.imageUrl ? (
+                    <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {panel.status === "error" ? "❌ 生成失败" : "⏳ 待生成"}
+                    </span>
+                  )}
+                </div>
+                {/* 台词（可编辑） */}
+                {renderEditable(panel.id, "dialogue", "💬", "点击添加台词", { fontSize: 13, marginBottom: 4 })}
+                {/* 旁白（可编辑） */}
+                {renderEditable(panel.id, "narration", "📖", "点击添加旁白", { fontSize: 12, color: "var(--text-muted)", marginBottom: 4 })}
+                {/* Prompt */}
+                <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                  {panel.prompt}
+                </div>
               </div>
-              {/* 台词/旁白 */}
-              {panel.dialogue && <div style={{ fontSize: 13, marginBottom: 4 }}><strong>💬</strong> {panel.dialogue}</div>}
-              {panel.narration && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>📖 {panel.narration}</div>}
-              {/* Prompt */}
-              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                {panel.prompt}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* ==================== 角色列表 ==================== */}
       {tab === "characters" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        <div className="character-grid">
           {project.characters.map((char) => (
             <div key={char.id} className="card" style={{ padding: 16 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
