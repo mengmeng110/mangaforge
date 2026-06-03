@@ -25,7 +25,10 @@ export interface VideoGenConfig {
 
 // 标准化 baseUrl — 自动补全路径
 function normalizeBaseUrl(raw: string): string {
-  let url = raw.replace(/\/+$/, "");
+  // agnes 特殊处理：如果 baseUrl 包含 'apihub.agnes-ai.com'，直接返回不做替换
+  if (raw.includes("apihub.agnes-ai.com")) return raw;
+
+  let url = raw.replace(/\/\/+$/, "");
   // 如果用户填了 /v1 结尾，去掉（后面会加）
   if (url.endsWith("/v1")) url = url.slice(0, -3);
   // 如果填了 /chat/completions，去掉
@@ -183,43 +186,83 @@ export async function generateSpeech(
   return res.arrayBuffer();
 }
 
-// ==================== 视频生成 (图生视频) ====================
+// ==== 视频生成 (图生视频) ====
+// 检测是否为 Agnes AI 平台
+function isAgnesBaseUrl(baseUrl: string): boolean {
+  return baseUrl && (baseUrl.includes("apihub.agnes-ai.com") || baseUrl.includes("agnes-ai.com"));
+}
+
 // 提交视频生成任务（异步）
 export async function submitVideoTask(
   config: VideoGenConfig,
   imageUrl: string,
   prompt: string
 ): Promise<string> {
-  const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.siliconflow.cn/v1");
-  const url = `${baseUrl}/v1/video/submit`;
+  const baseUrl = normalizeBaseUrl(config.baseUrl || "");
+  const isAgnes = isAgnesBaseUrl(config.baseUrl || "");
 
-  console.log(`[视频] 提交任务: ${url} 模型: ${config.model}`);
+  let taskId: string;
 
-  const res = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      image: imageUrl,
-      prompt: prompt,
-    }),
-  });
+  if (isAgnes) {
+    // Agnes Video V2.0: POST https://apihub.agnes-ai.com/v1/videos
+    const url = `${baseUrl}/videos`;
+    console.log(`[视频-Agnes] 提交任务: ${url}`);
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "未知错误");
-    throw new Error(`视频生成提交失败 (${res.status}): ${errText.slice(0, 200)}`);
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model || "agnes-video-v2.0",
+        prompt: prompt,
+        image: imageUrl,
+        num_frames: 121,
+        frame_rate: 24,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "未知错误");
+      throw new Error(`视频生成提交失败 (${res.status}): ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    taskId = data.task_id || data.id || "";
+    console.log(`[视频-Agnes] 任务已提交: ${taskId}`);
+  } else {
+    // 其他平台
+    const url = `${baseUrl}/v1/video/submit`;
+    console.log(`[视频-Other] 提交任务: ${url}`);
+
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        image: imageUrl,
+        prompt: prompt,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "未知错误");
+      throw new Error(`视频生成提交失败 (${res.status}): ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    taskId = data.requestId || data.task_id || data.id || "";
+    console.log(`[视频-Other] 任务已提交: ${taskId}`);
   }
 
-  const data = await res.json().catch(() => ({}));
-  const taskId = data.requestId || data.task_id || data.id || "";
   if (!taskId) {
-    throw new Error(`视频任务提交失败，未返回 taskId: ${JSON.stringify(data).slice(0, 200)}`);
+    throw new Error("视频任务提交失败，未返回 taskId");
   }
 
-  console.log(`[视频] 任务已提交: ${taskId}`);
   return taskId;
 }
 
@@ -227,57 +270,83 @@ export async function submitVideoTask(
 export async function pollVideoTask(
   config: VideoGenConfig,
   taskId: string
-): Promise<{ status: string; videoUrl?: string }> {
-  const baseUrl = normalizeBaseUrl(config.baseUrl || "https://api.siliconflow.cn/v1");
-  const url = `${baseUrl}/v1/video/status/${taskId}`;
+): Promise<{ status: string; videoUrl?: string; progress?: number }> {
+  const baseUrl = normalizeBaseUrl(config.baseUrl || "");
+  const isAgnes = isAgnesBaseUrl(config.baseUrl || "");
 
-  const res = await fetchWithTimeout(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-  });
+  if (isAgnes) {
+    // Agnes: GET /v1/videos/{task_id}
+    const url = `${baseUrl}/videos/${taskId}`;
+    console.log(`[视频-Agnes] 轮询: ${url}`);
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "未知错误");
-    throw new Error(`查询视频任务失败 (${res.status}): ${errText.slice(0, 200)}`);
+    const res = await fetchWithTimeout(url, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
+
+    if (!res.ok) {
+      return { status: "error", progress: 0 };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    const status = data.status || "unknown";
+    const progress = data.progress || 0;
+
+    let videoUrl: string | undefined;
+    if (status === "completed") {
+      videoUrl = data.remixed_from_video_id || data.video_url || data.url || "";
+    }
+
+    console.log(`[视频-Agnes] 状态: ${status} 进度: ${progress}%`);
+    return { status, videoUrl, progress };
+  } else {
+    // 其他平台
+    const url = `${baseUrl}/v1/video/status/${taskId}`;
+    const res = await fetchWithTimeout(url, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
+
+    if (!res.ok) {
+      return { status: "error", progress: 0 };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    const status = data.status || "unknown";
+    const videoUrl =
+      data.video?.url ||
+      data.output?.video_url ||
+      data.data?.video_url ||
+      data.url ||
+      undefined;
+
+    return { status, videoUrl };
   }
-
-  const data = await res.json().catch(() => ({}));
-  const status = data.status || "unknown";
-
-  // 提取视频 URL（不同平台返回结构不同）
-  const videoUrl =
-    data.video?.url ||
-    data.output?.video_url ||
-    data.results?.[0]?.url ||
-    data.videoUrl ||
-    "";
-
-  return { status, videoUrl: videoUrl || undefined };
 }
 
-// 等待视频生成完成（自动轮询）
+// 轮询等待视频生成完成
 export async function waitForVideo(
   config: VideoGenConfig,
   taskId: string,
-  maxWaitMs = 300000, // 5分钟
-  pollIntervalMs = 5000 // 5秒
+  timeoutSeconds: number = 900
 ): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
+  let elapsed = 0;
+  const interval = 5000;
+
+  while (elapsed < timeoutSeconds) {
     const result = await pollVideoTask(config, taskId);
-    console.log(`[视频] 任务 ${taskId} 状态: ${result.status}`);
 
-    if (result.status === "Succeed" || result.status === "succeed" || result.status === "completed") {
-      if (!result.videoUrl) throw new Error("视频生成完成但未返回 URL");
-      return result.videoUrl;
-    }
-    if (result.status === "Failed" || result.status === "failed") {
-      throw new Error("视频生成失败");
+    if (result.status === "completed" && result.videoUrl) {
+      console.log(`[视频] 生成完成: ${result.videoUrl}`);
+      return result.videoUrl!;
     }
 
-    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    if (result.status === "failed" || result.status === "error") {
+      throw new Error(`视频生成失败 (taskId: ${taskId})`);
+    }
+
+    console.log(`[视频] 等待中... ${Math.round(elapsed / 60)}分${elapsed % 60}秒 (进度: ${result.progress || 0}%)`);
+    await new Promise((r) => setTimeout(r, interval));
+    elapsed += interval;
   }
-  throw new Error(`视频生成超时 (${maxWaitMs / 1000}秒)`);
+
+  throw new Error(`视频生成超时 (${timeoutSeconds}秒)，任务ID: ${taskId}`);
 }

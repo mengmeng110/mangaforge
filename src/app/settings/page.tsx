@@ -16,10 +16,12 @@ const LLM_PRESETS = [
 const IMG_PRESETS = [
   { name: "OpenAI DALL-E", baseUrl: "https://api.openai.com/v1", model: "dall-e-3" },
   { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "black-forest-labs/FLUX.1-schnell" },
+  { name: "Agnes 图片", baseUrl: "https://apihub.agnes-ai.com/v1", model: "agnes-image-2.1-flash" },
   { name: "自定义", baseUrl: "", model: "" },
 ];
 
 const VIDEO_PRESETS = [
+  { name: "Agnes 视频", baseUrl: "https://apihub.agnes-ai.com/v1", model: "agnes-video-v2.0" },
   { name: "硅基流动 Wan", baseUrl: "https://api.siliconflow.cn/v1", model: "Wan-AI/Wan2.1-I2V-14B-720P" },
   { name: "可灵 Kling", baseUrl: "https://api.klingai.com", model: "kling-v1" },
   { name: "自定义", baseUrl: "", model: "" },
