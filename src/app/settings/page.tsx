@@ -5,6 +5,7 @@ import { useState } from "react";
 
 // 常见 LLM 提供商预设
 const LLM_PRESETS = [
+  { name: "Agnes 文本", baseUrl: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash", visionModel: "" },
   { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat", visionModel: "" },
   { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", visionModel: "gpt-4o" },
   { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V3", visionModel: "deepseek-ai/DeepSeek-V3" },

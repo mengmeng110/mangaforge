@@ -25,8 +25,10 @@ export interface VideoGenConfig {
 
 // 标准化 baseUrl — 自动补全路径
 function normalizeBaseUrl(raw: string): string {
-  // agnes 特殊处理：如果 baseUrl 包含 'apihub.agnes-ai.com'，直接返回不做替换
-  if (raw.includes("apihub.agnes-ai.com")) return raw;
+  // agnes 特殊处理：去掉末尾 /v1，由调用方拼接具体路径
+  if (raw.includes("apihub.agnes-ai.com")) {
+    return raw.replace(/\/+$/, "").replace(/\/v1$/, "");
+  }
 
   let url = raw.replace(/\/\/+$/, "");
   // 如果用户填了 /v1 结尾，去掉（后面会加）
