@@ -188,8 +188,8 @@ export async function generateSpeech(
 
 // ==== 视频生成 (图生视频) ====
 // 检测是否为 Agnes AI 平台
-function isAgnesBaseUrl(baseUrl: string): boolean {
-  return baseUrl && (baseUrl.includes("apihub.agnes-ai.com") || baseUrl.includes("agnes-ai.com"));
+function isAgnesBaseUrl(baseUrl: string | undefined): boolean {
+  return !!baseUrl && (baseUrl.includes("apihub.agnes-ai.com") || baseUrl.includes("agnes-ai.com"));
 }
 
 // 提交视频生成任务（异步）
