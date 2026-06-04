@@ -131,7 +131,8 @@ async function stepGenerateImages(
   // 构建场景描述索引
   const sceneIndex: Record<string, string> = {};
   for (const s of sceneList) {
-    sceneIndex[s.title] = s.description || s.location || s.title;
+    const key = s.title || String(s.index || 0);
+    sceneIndex[key] = s.description || s.location || key;
   }
 
   const stylePrompt = getStylePrompt(style);
