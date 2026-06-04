@@ -345,18 +345,37 @@ export async function runPipeline(
       if (state.cancelled) throw new Error("__PIPELINE_CANCELLED__");
     };
 
+    // 判断是否只运行到 images 就暂停（startFrom 为 images 时，不自动触发后续步骤）
+    const onlyRunToImages = startFrom === "images";
+
     // 步骤: 图片生成
     checkCancelled();
     if (startIdx <= ALL_STEPS.indexOf("images")) {
       await stepGenerateImages(projectId, config.imageGen, project.style || "anime", onProgress);
     }
 
+    // 当 startFrom === 'images' 时，在 images 完成后暂停，不自动触发 video/voiceover/export
+    if (onlyRunToImages) {
+      state.isRunning = false;
+      return;
+    }
+
     // 步骤: 分镜视频生成（可选）
     checkCancelled();
-    if (startIdx <= ALL_STEPS.indexOf("video") && config.videoGen?.apiKey) {
-      await stepGenerateVideos(projectId, config.videoGen, onProgress);
-    } else if (startIdx <= ALL_STEPS.indexOf("video")) {
-      updateStep(state, "video", "skipped", 100, "未配置视频生成 API，跳过");
+    if (startIdx <= ALL_STEPS.indexOf("video")) {
+      // 当 startFrom 为 'video' 时，先检查所有分镜的 imageUrl 是否都已生成
+      if (startFrom === "video") {
+        const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
+        const missingImages = panelList.filter((p) => !p.imageUrl);
+        if (missingImages.length > 0) {
+          throw new Error(`有 ${missingImages.length} 个分镜尚未生成图片，无法进入视频生成阶段。请先生成图片后再重试。`);
+        }
+      }
+      if (config.videoGen?.apiKey) {
+        await stepGenerateVideos(projectId, config.videoGen, onProgress);
+      } else {
+        updateStep(state, "video", "skipped", 100, "未配置视频生成 API，跳过");
+      }
     }
 
     // 步骤: 配音

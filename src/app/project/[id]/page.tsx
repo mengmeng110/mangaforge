@@ -289,8 +289,13 @@ export default function ProjectPage() {
             </button>
           )}
           {project.status === "analyzed" && (
-            <button className="btn-primary" onClick={() => handleRunPipeline("images")} disabled={pipeline?.isRunning}>
-              {pipeline?.isRunning ? "⏳ 生成中..." : "🚀 一键生成"}
+            <button className="btn-primary" onClick={() => handleRunPipeline("images")} disabled={pipeline?.isRunning || pipeline?.steps.some(s => s.step === "images" && s.status === "done")}>
+              {pipeline?.isRunning ? "⏳ 生成中..." : "🎨 生成图片"}
+            </button>
+          )}
+          {project.status === "analyzed" && (
+            <button className="btn-secondary" onClick={() => handleRunPipeline("video")} disabled={pipeline?.isRunning || !pipeline?.steps.some(s => s.step === "images" && s.status === "done")}>
+              {pipeline?.isRunning ? "⏳ 生成中..." : "🎬 生成分镜视频"}
             </button>
           )}
         </div>
