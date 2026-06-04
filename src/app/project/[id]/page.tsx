@@ -470,7 +470,7 @@ export default function ProjectPage() {
                   </span>
                 </div>
                 {/* 图片预览 */}
-                <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: panel.imageUrl ? "pointer" : "default" }} onClick={panel.imageUrl ? () => setPreviewAsset({ ...panel, type: "image", name: `分镜${i+1}_图片`, url: panel.imageUrl! }) : undefined}>
                   {panel.imageUrl ? (
                     <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
@@ -479,6 +479,16 @@ export default function ProjectPage() {
                     </span>
                   )}
                 </div>
+                {/* 视频预览 */}
+                {panel.videoUrl && (
+                  <div style={{ marginBottom: 8 }}>
+                    <video
+                      src={panel.videoUrl}
+                      controls
+                      style={{ width: "100%", maxHeight: 120, borderRadius: 6, background: "#000" }}
+                    />
+                  </div>
+                )}
                 {/* 台词（可编辑） */}
                 {renderEditable(panel.id, "dialogue", "💬", "点击添加台词", { fontSize: 13, marginBottom: 4 })}
                 {/* 旁白（可编辑） */}

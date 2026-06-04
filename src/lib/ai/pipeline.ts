@@ -356,6 +356,97 @@ async function stepGenerateVideos(
   onProgress("video", "done", 100, `完成！共生成 ${panelsWithImage.length} 段分镜视频`);
 }
 
+// ==================== 逐个生成分镜视频 ====================
+async function stepGenerateVideosSequential(
+  projectId: string,
+  videoConfig: VideoGenConfig,
+  onProgress: (step: PipelineStep, status: StepStatus, progress: number, message: string) => void
+) {
+  onProgress("video", "running", 0, "开始逐个生成分镜视频...");
+  const panelList = await getDb().select().from(panels).where(eq(panels.projectId, projectId)).all();
+  const panelsWithImage = panelList.filter((p) => p.imageUrl);
+
+  if (panelsWithImage.length === 0) {
+    onProgress("video", "done", 100, "没有已生成图片的分镜，跳过视频生成");
+    return;
+  }
+
+  const workDir = path.join(process.cwd(), "data", projectId, "videos");
+  fs.mkdirSync(workDir, { recursive: true });
+
+  // 一次性加载角色数据
+  const characterList = await getDb().select().from(characters).where(eq(characters.projectId, projectId)).all();
+
+  // 逐个串行生成
+  for (let idx = 0; idx < panelsWithImage.length; idx++) {
+    const panel = panelsWithImage[idx];
+    const pct = Math.round(((idx + 1) / panelsWithImage.length) * 100);
+    onProgress("video", "running", pct, `生成第 ${idx + 1}/${panelsWithImage.length} 段视频: ${panel.prompt?.slice(0, 20)}...`);
+
+    try {
+      // 构建 prompt
+      const prompt = `anime style, ${panel.camera || "medium shot"}, ${panel.prompt || "detailed illustration"}, smooth animation, cinematic`;
+
+      // 读取本地图片转 base64
+      const imgPath = path.join(process.cwd(), "data", projectId, "images", `${panel.id}.png`);
+      if (!fs.existsSync(imgPath)) {
+        throw new Error(`分镜图片不存在: ${panel.id}`);
+      }
+      const imgBuffer = fs.readFileSync(imgPath);
+      const imgBase64 = `data:image/png;base64,${imgBuffer.toString("base64")}`;
+
+      // 拼接角色一致性提示
+      const referencedChars = (panel.characters || '').split(',').map(s => s.trim()).filter(Boolean);
+      let videoPrompt = prompt;
+      for (const charName of referencedChars) {
+        const charRec = characterList.find(c => c.name === charName);
+        if (charRec && charRec.consistencyPrompt) {
+          videoPrompt += ` 【角色:${charName}: ${charRec.consistencyPrompt}】`;
+        }
+      }
+
+      // 提交视频任务
+      const taskId = await submitVideoTask(videoConfig, imgBase64, videoPrompt);
+
+      // 等待完成
+      const videoUrl = await waitForVideo(videoConfig, taskId);
+
+      // 下载视频到本地
+      const videoId = uuid();
+      const videoPath = path.join(workDir, `${videoId}.mp4`);
+      const res = await fetch(videoUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      fs.writeFileSync(videoPath, buffer);
+
+      // 更新分镜记录（立即写入，前端可随时预览）
+      await getDb().update(panels).set({
+        videoUrl: `/api/assets/file/${videoId}`,
+      }).where(eq(panels.id, panel.id)).run();
+
+      // 注册资产
+      await getDb().insert(assets).values({
+        id: videoId,
+        projectId,
+        type: "video",
+        name: `分镜_${idx + 1}_video.mp4`,
+        path: videoPath,
+        url: `/api/assets/file/${videoId}`,
+        size: buffer.length,
+        mimeType: "video/mp4",
+        source: "ai-generated",
+        metadata: JSON.stringify({ panelId: panel.id, taskId }),
+      }).run();
+
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "未知错误";
+      onProgress("video", "running", pct, `第 ${idx + 1} 段视频失败: ${msg}`);
+      // 失败不中断，继续下一个
+    }
+  }
+
+  onProgress("video", "done", 100, `完成！共生成 ${panelsWithImage.length} 段分镜视频`);
+}
+
 // ==================== 主管线执行器 ====================
 export async function runPipeline(
   projectId: string,
@@ -422,7 +513,7 @@ export async function runPipeline(
         }
       }
       if (config.videoGen?.apiKey) {
-        await stepGenerateVideos(projectId, config.videoGen, onProgress);
+        await stepGenerateVideosSequential(projectId, config.videoGen, onProgress);
       } else {
         updateStep(state, "video", "skipped", 100, "未配置视频生成 API，跳过");
       }
