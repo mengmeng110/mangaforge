@@ -26,7 +26,7 @@ export default function ProjectPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [pipeline, setPipeline] = useState<PipelineState | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [tab, setTab] = useState<"storyboard" | "characters" | "timeline" | "export">("storyboard");
+  const [tab, setTab] = useState<"storyboard" | "characters" | "scenes" | "timeline" | "export">("storyboard");
   const [analyzing, setAnalyzing] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null); // "panelId:field"
@@ -373,6 +373,7 @@ export default function ProjectPage() {
         {[
           { id: "storyboard" as const, label: "📐 分镜列表" },
           { id: "characters" as const, label: "👤 角色" },
+          { id: "scenes" as const, label: "🏞️ 场景" },
           { id: "timeline" as const, label: "⏱️ 时间轴" },
           { id: "export" as const, label: "📦 导出" },
         ].map((t) => (
@@ -505,6 +506,31 @@ export default function ProjectPage() {
                   <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{char.name}</h4>
                   <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 8px" }}>{char.personality}</p>
                   <p style={{ fontSize: 12, lineHeight: 1.5 }}>{char.description}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ==================== 场景视图 ==================== */}
+      {tab === "scenes" && (
+        <div className="character-grid">
+          {project.scenes.map((scene) => (
+            <div key={scene.id} className="card" style={{ padding: 16 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
+                  🏞️
+                </div>
+                <div>
+                  <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{scene.title}</h4>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 8px" }}>{scene.description}</p>
+                  <div style={{ fontSize: 12, display: "flex", gap: 12 }}>
+                    {scene.location && <span>📍 {scene.location}</span>}
+                    {scene.timeOfDay && <span>🕐 {scene.timeOfDay}</span>}
+                    {scene.mood && <span>🎭 {scene.mood}</span>}
+                    {scene.bgmStyle && <span>🎵 {scene.bgmStyle}</span>}
+                  </div>
                 </div>
               </div>
             </div>
