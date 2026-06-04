@@ -682,7 +682,7 @@ export default function ProjectPage() {
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "80vh" }}>
             {previewAsset.type === "video" ? (
               <video src={previewAsset.url} controls autoPlay style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
-            {(previewAsset.type === "image" || previewAsset.type === "character" || previewAsset.type === "scene") ? (
+            ) : (previewAsset.type === "image" || previewAsset.type === "character" || previewAsset.type === "scene") ? (
               <img src={previewAsset.url} alt={previewAsset.name} style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
             ) : previewAsset.type === "audio" ? (
               <div style={{ background: "var(--bg-card)", padding: 40, borderRadius: 16, textAlign: "center" }}>
