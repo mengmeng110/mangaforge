@@ -118,6 +118,22 @@ async function stepGenerateImages(
     return;
   }
 
+  // 加载角色和场景信息，用于拼接一致性提示
+  const characterList = await getDb().select().from(characters).where(eq(characters.projectId, projectId)).all();
+  const sceneList = await getDb().select().from(scenes).where(eq(scenes.projectId, projectId)).all();
+
+  // 构建角色描述索引
+  const characterIndex: Record<string, string> = {};
+  for (const c of characterList) {
+    characterIndex[c.name] = c.consistencyPrompt || c.description || c.name;
+  }
+
+  // 构建场景描述索引
+  const sceneIndex: Record<string, string> = {};
+  for (const s of sceneList) {
+    sceneIndex[s.title] = s.description || s.location || s.title;
+  }
+
   const stylePrompt = getStylePrompt(style);
   const workDir = path.join(process.cwd(), "data", projectId, "images");
   fs.mkdirSync(workDir, { recursive: true });
@@ -125,10 +141,33 @@ async function stepGenerateImages(
   for (let i = 0; i < panelList.length; i++) {
     const panel = panelList[i];
     const pct = Math.round(((i) / panelList.length) * 100);
-    onProgress("images", "running", pct, `生成第 ${i + 1}/${panelList.length} 张: ${panel.prompt?.slice(0, 30)}...`);
+    onProgress("images", "running", pct, `生成第 ${i + 1}/${panelList.length} 张: ${(panel.prompt || '').slice(0, 30)}...`);
 
     try {
-      const fullPrompt = `${panel.prompt || ''}, ${stylePrompt}`;
+      // 1. 拼接角色一致性提示
+      const referencedChars = (panel.characters || '').split(',').map(s => s.trim()).filter(Boolean);
+      let charConsistency = '';
+      for (const charName of referencedChars) {
+        const prompt = characterIndex[charName];
+        if (prompt) {
+          charConsistency += `【${charName}一致性: ${prompt}】`;
+        }
+      }
+
+      // 2. 拼接场景一致性提示（从场景名匹配）
+      let sceneConsistency = '';
+      const sceneMatch = sceneList.find(s => panel.prompt?.includes(s.title));
+      if (sceneMatch) {
+        sceneConsistency = `【场景-${sceneMatch.title}一致性: ${sceneMatch.description}】`;
+      }
+
+      // 3. 最终prompt = 角色提示 + 场景提示 + 用户编辑的prompt + 风格
+      let fullPrompt = '';
+      if (charConsistency) fullPrompt += charConsistency + ' ';
+      if (sceneConsistency) fullPrompt += sceneConsistency + ' ';
+      fullPrompt += (panel.prompt || '');
+      fullPrompt += ', ' + stylePrompt;
+
       const urls = await generateImage(imageConfig, fullPrompt);
       if (urls.length > 0) {
         // 下载图片到本地
@@ -257,8 +296,19 @@ async function stepGenerateVideos(
         const imgBuffer = fs.readFileSync(imgPath);
         const imgBase64 = `data:image/png;base64,${imgBuffer.toString("base64")}`;
 
+        // 获取角色一致性提示用于视频生成
+        const referencedChars = (panel.characters || '').split(',').map(s => s.trim()).filter(Boolean);
+        const characterList = await getDb().select().from(characters).where(eq(characters.projectId, projectId)).all();
+        let videoPrompt = prompt || '';
+        for (const charName of referencedChars) {
+          const charRec = characterList.find(c => c.name === charName);
+          if (charRec && charRec.consistencyPrompt) {
+            videoPrompt += ` 【角色:${charName}: ${charRec.consistencyPrompt}】`;
+          }
+        }
+
         // 提交视频生成任务
-        const taskId = await submitVideoTask(videoConfig, imgBase64, prompt);
+        const taskId = await submitVideoTask(videoConfig, imgBase64, videoPrompt);
         onProgress("video", "running", pct, `等待第 ${idx + 1} 段视频生成... (${taskId})`);
 
         // 等待完成
