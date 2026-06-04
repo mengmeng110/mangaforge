@@ -502,10 +502,51 @@ export default function ProjectPage() {
                 <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
                   {char.name[0]}
                 </div>
-                <div>
+                <div style={{ flex: 1 }}>
                   <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{char.name}</h4>
                   <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 8px" }}>{char.personality}</p>
                   <p style={{ fontSize: 12, lineHeight: 1.5 }}>{char.description}</p>
+                  {char.consistencyPrompt && (
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, background: "var(--bg-card)", padding: 8, borderRadius: 6 }}>
+                      <strong>一致性提示:</strong><br/>{char.consistencyPrompt}
+                    </p>
+                  )}
+                  <button
+                    className="btn-secondary"
+                    style={{ marginTop: 10, fontSize: 12, padding: "6px 12px" }}
+                    onClick={async () => {
+                      try {
+                        showToast("info", `正在为「${char.name}」生成参考图...`);
+                        const res = await fetch(`/api/projects/${id}/generate-asset`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "x-api-key": settings.imageGen.apiKey,
+                            "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
+                            "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
+                          },
+                          body: JSON.stringify({
+                            type: "character",
+                            name: char.name,
+                            prompt: char.consistencyPrompt || char.description,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.error) {
+                          showToast("error", data.error);
+                        } else {
+                          showToast("success", `✅ ${char.name} 参考图生成成功！`);
+                          loadAssets();
+                          loadProject();
+                        }
+                      } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : "网络错误";
+                        showToast("error", `生成失败: ${msg}`);
+                      }
+                    }}
+                  >
+                    🎨 生成参考图
+                  </button>
                 </div>
               </div>
             </div>
@@ -522,15 +563,51 @@ export default function ProjectPage() {
                 <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
                   🏞️
                 </div>
-                <div>
+                <div style={{ flex: 1 }}>
                   <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{scene.title}</h4>
                   <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 8px" }}>{scene.description}</p>
-                  <div style={{ fontSize: 12, display: "flex", gap: 12 }}>
+                  <div style={{ fontSize: 12, display: "flex", gap: 12, marginBottom: 8 }}>
                     {scene.location && <span>📍 {scene.location}</span>}
                     {scene.timeOfDay && <span>🕐 {scene.timeOfDay}</span>}
                     {scene.mood && <span>🎭 {scene.mood}</span>}
                     {scene.bgmStyle && <span>🎵 {scene.bgmStyle}</span>}
                   </div>
+                  <button
+                    className="btn-secondary"
+                    style={{ fontSize: 12, padding: "6px 12px" }}
+                    onClick={async () => {
+                      try {
+                        showToast("info", `正在为「${scene.title}」生成场景图...`);
+                        const res = await fetch(`/api/projects/${id}/generate-asset`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "x-api-key": settings.imageGen.apiKey,
+                            "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
+                            "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
+                          },
+                          body: JSON.stringify({
+                            type: "scene",
+                            name: scene.title,
+                            prompt: `${scene.description}${scene.location ? '，地点：' + scene.location : ''}${scene.timeOfDay ? '，时间：' + scene.timeOfDay : ''}${scene.mood ? '，氛围：' + scene.mood : ''}，电影级场景概念艺术，高分辨率`,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.error) {
+                          showToast("error", data.error);
+                        } else {
+                          showToast("success", `✅ ${scene.title} 场景图生成成功！`);
+                          loadAssets();
+                          loadProject();
+                        }
+                      } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : "网络错误";
+                        showToast("error", `生成失败: ${msg}`);
+                      }
+                    }}
+                  >
+                    🎨 生成场景图
+                  </button>
                 </div>
               </div>
             </div>
