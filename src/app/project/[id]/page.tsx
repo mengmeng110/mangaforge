@@ -470,7 +470,7 @@ export default function ProjectPage() {
                   </span>
                 </div>
                 {/* 图片预览 */}
-                <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: panel.imageUrl ? "pointer" : "default" }} onClick={panel.imageUrl ? () => setPreviewAsset({ ...panel, type: "image", name: `分镜${i+1}_图片`, url: panel.imageUrl! }) : undefined}>
+                <div style={{ width: "100%", height: 160, borderRadius: 8, background: "var(--bg)", marginBottom: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: panel.imageUrl ? "pointer" : "default" }} onClick={panel.imageUrl ? () => setPreviewAsset({ id: panel.id, type: "image", name: `分镜${i+1}_图片`, url: panel.imageUrl! }) : undefined}>
                   {panel.imageUrl ? (
                     <img src={panel.imageUrl} alt={`分镜 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
