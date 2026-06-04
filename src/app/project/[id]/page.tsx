@@ -496,11 +496,13 @@ export default function ProjectPage() {
       {/* ==================== 角色列表 ==================== */}
       {tab === "characters" && (
         <div className="character-grid">
-          {project.characters.map((char) => (
+          {project.characters.map((char) => {
+            const charImg = assets.find(a => a.type === "image" && a.name === char.name);
+            return (
             <div key={char.id} className="card" style={{ padding: 16 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
-                  {char.name[0]}
+                <div onClick={charImg ? () => setPreviewAsset(charImg) : undefined} style={{ width: 60, height: 60, borderRadius: "50%", background: charImg ? "transparent" : "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", cursor: charImg ? "pointer" : "default", flexShrink: 0, overflow: "hidden" }}>
+                  {charImg ? <img src={charImg.url} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} /> : char.name[0]}
                 </div>
                 <div style={{ flex: 1 }}>
                   <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{char.name}</h4>
@@ -511,57 +513,64 @@ export default function ProjectPage() {
                       <strong>一致性提示:</strong><br/>{char.consistencyPrompt}
                     </p>
                   )}
-                  <button
-                    className="btn-secondary"
-                    style={{ marginTop: 10, fontSize: 12, padding: "6px 12px" }}
-                    onClick={async () => {
-                      try {
-                        showToast("info", `正在为「${char.name}」生成参考图...`);
-                        const res = await fetch(`/api/projects/${id}/generate-asset`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "x-api-key": settings.imageGen.apiKey,
-                            "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
-                            "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
-                          },
-                          body: JSON.stringify({
-                            type: "character",
-                            name: char.name,
-                            prompt: char.consistencyPrompt || char.description,
-                          }),
-                        });
-                        const data = await res.json();
-                        if (data.error) {
-                          showToast("error", data.error);
-                        } else {
-                          showToast("success", `✅ ${char.name} 参考图生成成功！`);
-                          loadAssets();
-                          loadProject();
+                  {charImg ? (
+                    <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)" }}>✅ 已生成参考图</div>
+                  ) : (
+                    <button
+                      className="btn-secondary"
+                      style={{ marginTop: 10, fontSize: 12, padding: "6px 12px" }}
+                      onClick={async () => {
+                        try {
+                          showToast("info", `正在为「${char.name}」生成参考图...`);
+                          const res = await fetch(`/api/projects/${id}/generate-asset`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              "x-api-key": settings.imageGen.apiKey,
+                              "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
+                              "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
+                            },
+                            body: JSON.stringify({
+                              type: "image",
+                              name: char.name,
+                              prompt: char.consistencyPrompt || char.description,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (data.error) {
+                            showToast("error", data.error);
+                          } else {
+                            showToast("success", `✅ ${char.name} 参考图生成成功！`);
+                            loadAssets();
+                            loadProject();
+                          }
+                        } catch (e: unknown) {
+                          const msg = e instanceof Error ? e.message : "网络错误";
+                          showToast("error", `生成失败: ${msg}`);
                         }
-                      } catch (e: unknown) {
-                        const msg = e instanceof Error ? e.message : "网络错误";
-                        showToast("error", `生成失败: ${msg}`);
-                      }
-                    }}
-                  >
-                    🎨 生成参考图
-                  </button>
+                      }}
+                    >
+                      🎨 生成参考图
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* ==================== 场景视图 ==================== */}
       {tab === "scenes" && (
         <div className="character-grid">
-          {project.scenes.map((scene) => (
+          {project.scenes.map((scene) => {
+            const sceneImg = assets.find(a => a.type === "image" && a.name === scene.title);
+            return (
             <div key={scene.id} className="card" style={{ padding: 16 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
-                  🏞️
+                <div onClick={sceneImg ? () => setPreviewAsset(sceneImg) : undefined} style={{ width: 60, height: 60, borderRadius: "50%", background: sceneImg ? "transparent" : "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", cursor: sceneImg ? "pointer" : "default", flexShrink: 0, overflow: "hidden" }}>
+                  {sceneImg ? <img src={sceneImg.url} alt={scene.title} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} /> : "🏞️"}
                 </div>
                 <div style={{ flex: 1 }}>
                   <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{scene.title}</h4>
@@ -572,46 +581,51 @@ export default function ProjectPage() {
                     {scene.mood && <span>🎭 {scene.mood}</span>}
                     {scene.bgmStyle && <span>🎵 {scene.bgmStyle}</span>}
                   </div>
-                  <button
-                    className="btn-secondary"
-                    style={{ fontSize: 12, padding: "6px 12px" }}
-                    onClick={async () => {
-                      try {
-                        showToast("info", `正在为「${scene.title}」生成场景图...`);
-                        const res = await fetch(`/api/projects/${id}/generate-asset`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "x-api-key": settings.imageGen.apiKey,
-                            "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
-                            "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
-                          },
-                          body: JSON.stringify({
-                            type: "scene",
-                            name: scene.title,
-                            prompt: `${scene.description}${scene.location ? '，地点：' + scene.location : ''}${scene.timeOfDay ? '，时间：' + scene.timeOfDay : ''}${scene.mood ? '，氛围：' + scene.mood : ''}，电影级场景概念艺术，高分辨率`,
-                          }),
-                        });
-                        const data = await res.json();
-                        if (data.error) {
-                          showToast("error", data.error);
-                        } else {
-                          showToast("success", `✅ ${scene.title} 场景图生成成功！`);
-                          loadAssets();
-                          loadProject();
+                  {sceneImg ? (
+                    <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)" }}>✅ 已生成场景图</div>
+                  ) : (
+                    <button
+                      className="btn-secondary"
+                      style={{ marginTop: 10, fontSize: 12, padding: "6px 12px" }}
+                      onClick={async () => {
+                        try {
+                          showToast("info", `正在为「${scene.title}」生成场景图...`);
+                          const res = await fetch(`/api/projects/${id}/generate-asset`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              "x-api-key": settings.imageGen.apiKey,
+                              "x-base-url": settings.imageGen.baseUrl || "https://apihub.agnes-ai.com/v1",
+                              "x-model": settings.imageGen.model || "agnes-image-2.1-flash",
+                            },
+                            body: JSON.stringify({
+                              type: "image",
+                              name: scene.title,
+                              prompt: `${scene.description}${scene.location ? '，地点：' + scene.location : ''}${scene.timeOfDay ? '，时间：' + scene.timeOfDay : ''}${scene.mood ? '，氛围：' + scene.mood : ''}，电影级场景概念艺术，高分辨率`,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (data.error) {
+                            showToast("error", data.error);
+                          } else {
+                            showToast("success", `✅ ${scene.title} 场景图生成成功！`);
+                            loadAssets();
+                            loadProject();
+                          }
+                        } catch (e: unknown) {
+                          const msg = e instanceof Error ? e.message : "网络错误";
+                          showToast("error", `生成失败: ${msg}`);
                         }
-                      } catch (e: unknown) {
-                        const msg = e instanceof Error ? e.message : "网络错误";
-                        showToast("error", `生成失败: ${msg}`);
-                      }
-                    }}
-                  >
-                    🎨 生成场景图
-                  </button>
+                      }}
+                    >
+                      🎨 生成场景图
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -668,7 +682,7 @@ export default function ProjectPage() {
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "80vh" }}>
             {previewAsset.type === "video" ? (
               <video src={previewAsset.url} controls autoPlay style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
-            ) : previewAsset.type === "image" ? (
+            {(previewAsset.type === "image" || previewAsset.type === "character" || previewAsset.type === "scene") ? (
               <img src={previewAsset.url} alt={previewAsset.name} style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12 }} />
             ) : previewAsset.type === "audio" ? (
               <div style={{ background: "var(--bg-card)", padding: 40, borderRadius: 16, textAlign: "center" }}>
