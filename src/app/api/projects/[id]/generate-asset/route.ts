@@ -52,7 +52,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: "生图成功但未返回图片 URL" }, { status: 500 });
     }
 
-    // 保存到数据库
     const db = await getDb();
     const assetId = `asset_${type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await db.insert(assets).values({
@@ -60,10 +59,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       projectId: id,
       type,
       name,
+      path: imageUrl,
       url: imageUrl,
-      prompt,
-      status: "done",
-      createdAt: new Date().toISOString(),
+      source: "ai-generated",
+      metadata: JSON.stringify({ prompt }),
+      createdAt: new Date(),
     });
 
     return NextResponse.json({ success: true, assetId, imageUrl });
