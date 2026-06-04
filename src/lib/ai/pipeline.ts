@@ -157,9 +157,9 @@ async function stepGenerateImages(
 
       // 2. 拼接场景一致性提示（从场景名匹配）
       let sceneConsistency = '';
-      const sceneMatch = sceneList.find(s => panel.prompt?.includes(s.title));
+      const sceneMatch = sceneList.find(s => (panel.prompt || "").includes(s.title || ""));
       if (sceneMatch) {
-        sceneConsistency = `【场景-${sceneMatch.title}一致性: ${sceneMatch.description}】`;
+        sceneConsistency = `【场景-${(sceneMatch.title || "场景")}一致性: ${sceneMatch.description}】`;
       }
 
       // 3. 最终prompt = 角色提示 + 场景提示 + 用户编辑的prompt + 风格
