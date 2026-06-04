@@ -11,8 +11,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!prompt || !name) {
       return NextResponse.json({ error: "prompt 和 name 必填" }, { status: 400 });
     }
-    if (type !== "character" && type !== "scene") {
-      return NextResponse.json({ error: "type 必须是 character 或 scene" }, { status: 400 });
+    if (type !== "image" && type !== "character" && type !== "scene") {
+      return NextResponse.json({ error: "type 必须是 image、character 或 scene" }, { status: 400 });
     }
 
     // 从请求头获取 API 配置
